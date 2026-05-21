@@ -21,7 +21,6 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vercel/next": "^4.17.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
