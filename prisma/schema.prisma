@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  codigoInterno String   @unique
+  descricao     String
+  unidadeMedida String   @default("UN")
+  observacao    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  barcodes    ProductBarcode[]
+  scanEntries ScanEntry[]
+}
+
+// Tabela que vincula barcodes (EAN/DUN) a produtos
+model ProductBarcode {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  codeType        String   // EAN | DUN | UNKNOWN
+  unitsPerPackage Int?     // preenchido para DUN
+  productId       String
+  createdAt       DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ScanSession {
+  id        String    @id @default(cuid())
+  name      String
+  status    String    @default("open") // open | closed
+  createdAt DateTime  @default(now())
+  closedAt  DateTime?
+
+  entries ScanEntry[]
+}
+
+model ScanEntry {
+  id              String   @id @default(cuid())
+  sessionId       String
+  code            String
+  codeType        String   // EAN | DUN | UNKNOWN
+  quantity        Int      @default(1)
+  unitsPerPackage Int?
+  productId       String?
+  status          String   @default("VINCULADO") // VINCULADO | PENDENTE_DE_VINCULO
+  scannedAt       DateTime @default(now())
+
+  session ScanSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  product Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+}

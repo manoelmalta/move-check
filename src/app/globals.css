@@ -1,26 +1,61 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-move-blue: #0057B8;
+  --color-move-blue-dark: #003F8A;
+  --color-move-blue-light: #1A6FCC;
+  --color-scan-found: #16a34a;
+  --color-scan-new: #ca8a04;
+  --color-scan-saved: #0057B8;
+  --color-scan-error: #dc2626;
+  --color-graphite: #1a1a2e;
+  --color-graphite-soft: #2d2d44;
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans, Arial, sans-serif);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #f4f6f9;
+  color: #1a1a2e;
+  min-height: 100dvh;
 }
+
+/* Scanner frame animation */
+@keyframes scan-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.scanner-corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-color: #0057B8;
+  border-style: solid;
+}
+.scanner-corner-tl { top: 0; left: 0; border-width: 3px 0 0 3px; }
+.scanner-corner-tr { top: 0; right: 0; border-width: 3px 3px 0 0; }
+.scanner-corner-bl { bottom: 0; left: 0; border-width: 0 0 3px 3px; }
+.scanner-corner-br { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.slide-up { animation: slide-up 0.2s ease-out; }
+
+/* Status colors */
+.status-found { --status-bg: #dcfce7; --status-border: #16a34a; --status-text: #15803d; }
+.status-not-found { --status-bg: #fefce8; --status-border: #ca8a04; --status-text: #92400e; }
+.status-saved { --status-bg: #dbeafe; --status-border: #0057B8; --status-text: #1e40af; }
+.status-error { --status-bg: #fee2e2; --status-border: #dc2626; --status-text: #b91c1c; }
+.status-duplicate { --status-bg: #fef3c7; --status-border: #d97706; --status-text: #92400e; }
