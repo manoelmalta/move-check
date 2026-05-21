@@ -2,6 +2,8 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { getSessions } from "@/actions/session";
+import { BrandedBackground } from "@/components/branded-background";
+import { MoveCheckLogo } from "@/components/move-check-logo";
 
 export default async function Home() {
   const sessions = await getSessions();
@@ -9,40 +11,20 @@ export default async function Home() {
   const totalEntries = sessions.reduce((acc, s) => acc + s.totalEntries, 0);
 
   return (
-    <main className="min-h-dvh flex flex-col bg-[#0057B8] relative overflow-hidden">
-      {/* Background grid */}
-      <div
-        className="absolute inset-0 opacity-[0.06]"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(255,255,255,0.8) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.8) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }}
-      />
-
-      {/* Top accent lines */}
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-      <div className="absolute top-2 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+    <main className="min-h-dvh flex flex-col relative overflow-hidden">
+      <BrandedBackground variant="hero" />
 
       {/* Header */}
-      <header className="relative z-10 flex items-center justify-between px-6 pt-8 pb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="flex gap-[2px] items-end">
-              {[3, 5, 2, 4, 3, 5, 2, 4, 3].map((h, i) => (
-                <div
-                  key={i}
-                  className="bg-white/90 rounded-sm"
-                  style={{ width: 2, height: h * 4 }}
-                />
-              ))}
-            </div>
-            <span className="text-white font-bold text-xl tracking-[0.18em] uppercase ml-1">
+      <header className="relative z-10 flex items-center justify-between px-6 pt-7 pb-4">
+        <div className="flex items-center gap-3">
+          <MoveCheckLogo size={52} priority />
+          <div className="leading-none">
+            <div className="text-white font-bold text-xl tracking-[0.18em] uppercase">
               MOVE
-            </span>
-          </div>
-          <div className="text-white/50 text-[10px] tracking-[0.35em] uppercase ml-[42px]">
-            CHECK
+            </div>
+            <div className="text-white/55 text-[10px] tracking-[0.35em] uppercase mt-1">
+              CHECK
+            </div>
           </div>
         </div>
         <div className="text-right">

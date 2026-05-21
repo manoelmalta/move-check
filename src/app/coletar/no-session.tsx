@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createSession } from "@/actions/session";
 import type { OperationType } from "@/actions/session";
 import { useRouter } from "next/navigation";
+import { MoveCheckLogo } from "@/components/move-check-logo";
 
 type Props = {
   operationType?: OperationType;
@@ -28,15 +29,25 @@ export function NoSession({ operationType = "PRODUCT_INVENTORY" }: Props) {
 
   return (
     <div className="min-h-dvh bg-[#f4f6f9] flex flex-col">
-      <header className={`${isRegistration ? "bg-teal-600" : "bg-[#0057B8]"} text-white px-4 pt-4 pb-4`}>
-        <div className="flex items-center gap-3">
-          <Link href="/coletar" className="text-white/70 active:text-white transition-colors">
+      <header className={`${isRegistration ? "bg-teal-600" : "bg-[#0057B8]"} text-white px-4 pt-4 pb-4 relative overflow-hidden`}>
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-[0.12] pointer-events-none mix-blend-screen"
+          style={{
+            backgroundImage: "url('/branding/background-check.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        />
+        <div className="relative flex items-center gap-2.5">
+          <Link href="/coletar" className="text-white/70 active:text-white transition-colors shrink-0">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 5l-7 7 7 7" />
             </svg>
           </Link>
-          <div>
-            <div className="text-[10px] text-white/50 tracking-[0.25em] uppercase">MOVE CHECK · {label.toUpperCase()}</div>
+          <MoveCheckLogo size={30} className="shrink-0" />
+          <div className="min-w-0">
+            <div className="text-[10px] text-white/55 tracking-[0.25em] uppercase">MOVE CHECK · {label.toUpperCase()}</div>
             <div className="font-bold text-sm">Nenhuma sessão</div>
           </div>
         </div>

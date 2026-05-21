@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { loginAction } from "./actions";
+import { BrandedBackground } from "@/components/branded-background";
+import { MoveCheckLogo } from "@/components/move-check-logo";
 
 export function LoginForm() {
   const [password, setPassword] = useState("");
@@ -25,36 +27,15 @@ export function LoginForm() {
   };
 
   return (
-    <div className="min-h-dvh bg-[#0057B8] flex flex-col items-center justify-center px-6">
-      {/* Background grid */}
-      <div
-        className="fixed inset-0 opacity-[0.06] pointer-events-none"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(255,255,255,0.8) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.8) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }}
-      />
+    <div className="min-h-dvh flex flex-col items-center justify-center px-6 relative overflow-hidden">
+      <BrandedBackground variant="hero" />
 
       <div className="relative z-10 w-full max-w-sm">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <div className="flex gap-[2px] items-end">
-              {[3, 5, 2, 4, 3, 5, 2, 4, 3].map((h, i) => (
-                <div
-                  key={i}
-                  className="bg-white/90 rounded-sm"
-                  style={{ width: 2, height: h * 4 }}
-                />
-              ))}
-            </div>
-            <span className="text-white font-bold text-xl tracking-[0.18em] uppercase ml-1">
-              MOVE
-            </span>
-          </div>
-          <div className="text-white/50 text-[10px] tracking-[0.35em] uppercase">
-            CHECK
+        <div className="flex flex-col items-center mb-8">
+          <MoveCheckLogo size={96} priority className="drop-shadow-2xl" />
+          <div className="text-white/55 text-[10px] tracking-[0.4em] uppercase mt-3">
+            Operational Scan Cockpit
           </div>
         </div>
 

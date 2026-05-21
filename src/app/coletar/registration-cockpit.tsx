@@ -10,6 +10,7 @@ import { linkBarcodeOnly, logAlreadyLinked } from "@/actions/registration";
 import type { RegLogEntry } from "@/actions/registration";
 import { detectCodeType } from "@/lib/barcode";
 import { CameraScanner } from "./camera-scanner";
+import { MoveCheckLogo } from "@/components/move-check-logo";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -458,17 +459,27 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
     <div className="min-h-dvh bg-[#f4f6f9] flex flex-col">
 
       {/* Header */}
-      <header className="bg-teal-700 text-white px-4 pt-4 pb-3 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <Link href="/coletar" className="text-white/70 active:text-white transition-colors">
+      <header className="bg-teal-700 text-white px-4 pt-4 pb-3 flex items-center justify-between shrink-0 relative overflow-hidden">
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-[0.12] pointer-events-none mix-blend-screen"
+          style={{
+            backgroundImage: "url('/branding/background-check.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        />
+        <div className="relative flex items-center gap-2.5 min-w-0 flex-1">
+          <Link href="/coletar" className="text-white/70 active:text-white transition-colors shrink-0">
             <ArrowLeft />
           </Link>
+          <MoveCheckLogo size={28} className="shrink-0" />
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] text-white/50 tracking-[0.25em] uppercase">MOVE CHECK · CADASTRO</div>
+            <div className="text-[10px] text-white/55 tracking-[0.25em] uppercase">MOVE CHECK · CADASTRO</div>
             <div className="font-bold text-sm leading-none truncate">{session.name}</div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="relative flex items-center gap-2 shrink-0">
           <Link
             href="/sessoes"
             className="text-white/60 text-[11px] font-medium border border-white/20 rounded-lg px-2.5 py-1.5 active:bg-white/10 transition-colors"

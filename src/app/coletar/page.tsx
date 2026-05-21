@@ -5,6 +5,8 @@ import { getRegistrationLogs } from "@/actions/registration";
 import { ScannerCockpit } from "./scanner-cockpit";
 import { RegistrationCockpit } from "./registration-cockpit";
 import { ClosedSession } from "./closed-session";
+import { BrandedBackground } from "@/components/branded-background";
+import { MoveCheckLogo } from "@/components/move-check-logo";
 
 export default async function ColetarPage({
   searchParams,
@@ -54,36 +56,39 @@ export default async function ColetarPage({
 
 function Hub() {
   return (
-    <div className="min-h-dvh bg-[#f4f6f9] flex flex-col">
-      <header className="bg-[#0057B8] text-white px-4 pt-4 pb-4">
+    <div className="min-h-dvh flex flex-col relative overflow-hidden">
+      <BrandedBackground variant="hero" />
+
+      <header className="relative z-10 px-4 pt-4 pb-3">
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-white/70 active:text-white transition-colors">
+          <Link href="/" className="text-white/70 active:text-white transition-colors shrink-0">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 5l-7 7 7 7" />
             </svg>
           </Link>
-          <div>
-            <div className="text-[10px] text-white/50 tracking-[0.25em] uppercase">MOVE CHECK</div>
-            <div className="font-bold text-sm">Coletar</div>
+          <MoveCheckLogo size={36} priority />
+          <div className="min-w-0">
+            <div className="text-[10px] text-white/55 tracking-[0.25em] uppercase">MOVE CHECK</div>
+            <div className="font-bold text-sm text-white leading-tight">Coletar</div>
           </div>
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col justify-center px-4 gap-4 max-w-sm mx-auto w-full py-8">
-        <p className="text-[11px] text-gray-400 tracking-[0.2em] uppercase text-center mb-2">
+      <div className="relative z-10 flex-1 flex flex-col justify-center px-4 gap-4 max-w-sm mx-auto w-full py-8">
+        <p className="text-[11px] text-white/60 tracking-[0.25em] uppercase text-center mb-2">
           O que você quer fazer?
         </p>
 
         <Link
           href="/inventario-produto"
-          className="group bg-white rounded-2xl border-2 border-[#0057B8]/20 shadow-sm px-5 py-5 flex items-start gap-4 active:bg-blue-50 transition-colors"
+          className="group bg-white rounded-2xl border border-white/40 shadow-xl px-5 py-5 flex items-start gap-4 active:bg-blue-50 transition-colors"
         >
           <div className="w-12 h-12 rounded-xl bg-[#0057B8] flex items-center justify-center shrink-0">
             <BarcodeIcon color="white" />
           </div>
           <div className="min-w-0">
             <div className="font-bold text-gray-900 text-base">Inventário de Produto</div>
-            <div className="text-sm text-gray-400 mt-0.5 leading-snug">
+            <div className="text-sm text-gray-500 mt-0.5 leading-snug">
               Leia códigos e registre quantidades para contagem de estoque.
             </div>
           </div>
@@ -91,14 +96,14 @@ function Hub() {
 
         <Link
           href="/cadastro-produto"
-          className="group bg-white rounded-2xl border-2 border-teal-200 shadow-sm px-5 py-5 flex items-start gap-4 active:bg-teal-50 transition-colors"
+          className="group bg-white rounded-2xl border border-white/40 shadow-xl px-5 py-5 flex items-start gap-4 active:bg-teal-50 transition-colors"
         >
           <div className="w-12 h-12 rounded-xl bg-teal-600 flex items-center justify-center shrink-0">
             <LinkIcon color="white" />
           </div>
           <div className="min-w-0">
             <div className="font-bold text-gray-900 text-base">Cadastro de Produto</div>
-            <div className="text-sm text-gray-400 mt-0.5 leading-snug">
+            <div className="text-sm text-gray-500 mt-0.5 leading-snug">
               Vincule códigos de barras (EAN/DUN) a produtos cadastrados no sistema.
             </div>
           </div>
@@ -106,9 +111,9 @@ function Hub() {
 
         <Link
           href="/sessoes"
-          className="mt-2 text-center text-sm text-[#0057B8] font-medium py-1"
+          className="mt-2 text-center text-sm text-white font-medium py-1 active:text-white/70"
         >
-          Gerenciar sessões
+          Gerenciar sessões →
         </Link>
       </div>
     </div>
