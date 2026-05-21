@@ -84,6 +84,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
   const [state, setState] = useState<ScanState>({ phase: "idle" });
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [quantity, setQuantity] = useState(1);
+  const [quantityStr, setQuantityStr] = useState("1");
   const [cameraOpen, setCameraOpen] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -111,6 +112,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
   const resetToIdle = useCallback(() => {
     setInput("");
     setQuantity(1);
+    setQuantityStr("1");
     setState({ phase: "idle" });
     refocus();
   }, [refocus]);
@@ -390,6 +392,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
       setState({ phase: "saved", code, productName, status });
       setInput("");
       setQuantity(1);
+      setQuantityStr("1");
 
       const newEntry: Entry = {
         id: (result as { entryId: string }).entryId,
@@ -475,11 +478,11 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
       {/* Header */}
       <header className="bg-[#0057B8] text-white px-4 pt-4 pb-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-white/70 active:text-white transition-colors">
+          <Link href="/coletar" className="text-white/70 active:text-white transition-colors">
             <ArrowLeft />
           </Link>
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] text-white/50 tracking-[0.25em] uppercase">MOVE CHECK · SESSÃO</div>
+            <div className="text-[10px] text-white/50 tracking-[0.25em] uppercase">MOVE CHECK · INVENTÁRIO</div>
             <div className="font-bold text-sm leading-none truncate">{session.name}</div>
           </div>
         </div>
@@ -675,14 +678,30 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
             <span className="text-sm text-gray-500 font-medium">
               {isDunBarcode || isTextEmbalagem ? "Embalagens fechadas" : "Quantidade"}
             </span>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                onClick={() => { const n = Math.max(1, quantity - 1); setQuantity(n); setQuantityStr(String(n)); }}
                 className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-700 font-bold active:bg-gray-200"
               >−</button>
-              <span className="text-xl font-bold text-gray-900 w-8 text-center">{quantity}</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="1"
+                value={quantityStr}
+                onChange={(e) => {
+                  setQuantityStr(e.target.value);
+                  const n = parseInt(e.target.value, 10);
+                  if (!isNaN(n) && n >= 1) setQuantity(n);
+                }}
+                onBlur={() => {
+                  const n = parseInt(quantityStr, 10);
+                  if (isNaN(n) || n < 1) { setQuantityStr("1"); setQuantity(1); }
+                  else { setQuantityStr(String(n)); setQuantity(n); }
+                }}
+                className="w-16 text-center text-xl font-bold text-gray-900 border border-gray-200 rounded-lg py-1 outline-none focus:border-[#0057B8]"
+              />
               <button
-                onClick={() => setQuantity((q) => q + 1)}
+                onClick={() => { const n = quantity + 1; setQuantity(n); setQuantityStr(String(n)); }}
                 className="w-8 h-8 rounded-lg bg-[#0057B8] flex items-center justify-center text-white font-bold active:bg-[#003F8A]"
               >+</button>
             </div>

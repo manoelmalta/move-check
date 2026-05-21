@@ -153,7 +153,7 @@ export function SessionCard({ session }: Props) {
       <div className="px-4 py-2.5 flex flex-wrap gap-2">
         {isOpen && (
           <Link
-            href={`/coletar?sessionId=${session.id}`}
+            href={`${isRegistration ? "/cadastro-produto" : "/inventario-produto"}?sessionId=${session.id}`}
             className={`flex items-center gap-1.5 text-white text-xs font-bold rounded-lg px-3 py-2 transition-colors ${
               isRegistration
                 ? "bg-teal-600 active:bg-teal-700"

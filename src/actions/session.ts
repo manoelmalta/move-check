@@ -99,6 +99,23 @@ export async function getSessions(): Promise<SessionSummary[]> {
   });
 }
 
+export async function getMostRecentOpenSessionByType(
+  operationType: OperationType
+): Promise<Session | null> {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("scan_sessions")
+    .select("id, name, status, operation_type, created_at, closed_at")
+    .eq("status", "open")
+    .eq("operation_type", operationType)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return mapSession(data);
+}
+
 export async function getOpenSessions(): Promise<{ id: string; name: string }[]> {
   const supabase = createServerClient();
   const { data, error } = await supabase

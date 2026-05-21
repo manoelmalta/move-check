@@ -3,42 +3,49 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createSession } from "@/actions/session";
+import type { OperationType } from "@/actions/session";
 import { useRouter } from "next/navigation";
 
-export function NoSession() {
+type Props = {
+  operationType?: OperationType;
+};
+
+export function NoSession({ operationType = "PRODUCT_INVENTORY" }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  const isRegistration = operationType === "PRODUCT_REGISTRATION";
+  const label = isRegistration ? "Cadastro" : "Inventário";
+  const destRoute = isRegistration ? "/cadastro-produto" : "/inventario-produto";
+
   const handleCreate = async () => {
     setLoading(true);
-    const session = await createSession(name);
-    router.push(`/coletar?sessionId=${session.id}`);
+    const session = await createSession(name, operationType);
+    router.push(`${destRoute}?sessionId=${session.id}`);
   };
 
   return (
     <div className="min-h-dvh bg-[#f4f6f9] flex flex-col">
-      {/* Header */}
-      <header className="bg-[#0057B8] text-white px-4 pt-4 pb-4">
+      <header className={`${isRegistration ? "bg-teal-600" : "bg-[#0057B8]"} text-white px-4 pt-4 pb-4`}>
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-white/70 active:text-white transition-colors">
+          <Link href="/coletar" className="text-white/70 active:text-white transition-colors">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 5l-7 7 7 7" />
             </svg>
           </Link>
           <div>
-            <div className="text-[10px] text-white/50 tracking-[0.25em] uppercase">MOVE CHECK</div>
-            <div className="font-bold text-sm">Coletar</div>
+            <div className="text-[10px] text-white/50 tracking-[0.25em] uppercase">MOVE CHECK · {label.toUpperCase()}</div>
+            <div className="font-bold text-sm">Nenhuma sessão</div>
           </div>
         </div>
       </header>
 
-      {/* Content */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6 max-w-sm mx-auto w-full">
         <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <div className={`w-16 h-16 rounded-2xl ${isRegistration ? "bg-teal-50" : "bg-gray-100"} flex items-center justify-center mx-auto mb-4`}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={isRegistration ? "#0d9488" : "#9ca3af"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="6" width="3" height="12" rx="0.5" />
               <rect x="8" y="6" width="1.5" height="12" rx="0.5" />
               <rect x="11.5" y="6" width="2.5" height="12" rx="0.5" />
@@ -48,7 +55,7 @@ export function NoSession() {
           </div>
           <h2 className="text-gray-900 font-bold text-xl mb-1">Nenhuma sessão aberta</h2>
           <p className="text-gray-400 text-sm">
-            Crie uma nova sessão para começar a coletar leituras.
+            Crie uma nova sessão de {label.toLowerCase()} para começar.
           </p>
         </div>
 
@@ -56,9 +63,9 @@ export function NoSession() {
           <div className="w-full flex flex-col gap-3">
             <button
               onClick={() => setShowForm(true)}
-              className="w-full bg-[#0057B8] text-white font-bold text-base rounded-2xl py-4.5 active:bg-[#003F8A] transition-colors shadow-md"
+              className={`w-full ${isRegistration ? "bg-teal-600 active:bg-teal-700" : "bg-[#0057B8] active:bg-[#003F8A]"} text-white font-bold text-base rounded-2xl py-4 active:opacity-90 transition-colors shadow-md`}
             >
-              + Criar nova sessão
+              + Criar nova sessão de {label.toLowerCase()}
             </button>
             <Link
               href="/sessoes"
@@ -76,8 +83,8 @@ export function NoSession() {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="ex: Coleta Manhã — Galpão A"
-              className="border border-gray-200 rounded-xl px-3 py-3 text-sm outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8]/20"
+              placeholder={isRegistration ? "ex: Cadastro Fornecedor A" : "ex: Coleta Manhã — Galpão A"}
+              className={`border border-gray-200 rounded-xl px-3 py-3 text-sm outline-none focus:ring-1 ${isRegistration ? "focus:border-teal-500 focus:ring-teal-500/20" : "focus:border-[#0057B8] focus:ring-[#0057B8]/20"}`}
               autoFocus
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
             />
@@ -94,9 +101,9 @@ export function NoSession() {
               <button
                 onClick={handleCreate}
                 disabled={loading}
-                className="flex-[2] bg-[#0057B8] text-white font-bold text-sm rounded-xl py-3 active:bg-[#003F8A] disabled:opacity-50 transition-colors"
+                className={`flex-[2] ${isRegistration ? "bg-teal-600 active:bg-teal-700" : "bg-[#0057B8] active:bg-[#003F8A]"} text-white font-bold text-sm rounded-xl py-3 disabled:opacity-50 transition-colors`}
               >
-                {loading ? "Criando…" : "Criar e Coletar"}
+                {loading ? "Criando…" : `Criar e ${isRegistration ? "Cadastrar" : "Coletar"}`}
               </button>
             </div>
           </div>

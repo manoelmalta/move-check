@@ -39,6 +39,17 @@ type RegState =
       };
     }
   | {
+      // Produto encontrado por texto — aguardando barcode para vincular
+      phase: "awaiting_barcode";
+      product: {
+        id: string;
+        codigoInterno: string;
+        descricao: string;
+        unidadeMedida: string;
+        barcodes: Array<{ code: string; codeType: string }>;
+      };
+    }
+  | {
       phase: "select_product";
       term: string;
       products: ProductWithBarcodes[];
@@ -78,6 +89,8 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
   const searchRef = useRef<HTMLInputElement>(null);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Holds product data when phase === "awaiting_barcode" (avoids stale closure)
+  const awaitingProductRef = useRef<RegState & { phase: "awaiting_barcode" } | null>(null);
 
   const statePhaseRef = useRef(state.phase);
   statePhaseRef.current = state.phase;
@@ -97,6 +110,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
 
   const resetToIdle = useCallback(() => {
     setInput("");
+    awaitingProductRef.current = null;
     setState({ phase: "idle" });
     refocus();
   }, [refocus]);
@@ -112,6 +126,54 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
       const isPureNumeric = term.replace(/\s/g, "") === digitsOnly;
       const isBarcode = isPureNumeric && (digitsOnly.length === 13 || digitsOnly.length === 14);
 
+      // ── Produto já selecionado, esperando barcode para vincular ───────────
+      if (statePhaseRef.current === "awaiting_barcode") {
+        if (!isBarcode) return; // só aceita barcodes neste estado
+        const awaiting = awaitingProductRef.current;
+        if (!awaiting) { resetToIdle(); return; }
+
+        setState({ phase: "looking", code: digitsOnly, codeType: detectCodeType(digitsOnly) });
+        const result = await lookupCode(digitsOnly);
+
+        if (result.status === "found") {
+          setState({
+            phase: "already_linked",
+            code: digitsOnly,
+            codeType: result.codeType,
+            barcodeId: result.barcodeId,
+            product: result.product,
+            unitsPerPackage: result.unitsPerPackage,
+          });
+          logAlreadyLinked({
+            sessionId: session.id,
+            code: digitsOnly,
+            productId: result.product.id,
+            barcodeId: result.barcodeId,
+          }).catch(() => {});
+        } else if (result.status === "not_found") {
+          // Barcode livre + produto já selecionado → ir direto para confirmar vínculo
+          setState({
+            phase: "confirm_link",
+            code: digitsOnly,
+            codeType: detectCodeType(digitsOnly),
+            product: {
+              id: awaiting.product.id,
+              codigoInterno: awaiting.product.codigoInterno,
+              descricao: awaiting.product.descricao,
+              unidadeMedida: awaiting.product.unidadeMedida,
+              observacao: null,
+            },
+            unitsPerPackage: "",
+          });
+        } else {
+          setState({ phase: "error", message: result.message });
+          clearStateAfter(3000);
+          refocus();
+        }
+        return;
+      }
+
+      // ── Caminho barcode ───────────────────────────────────────────────────
       if (isBarcode) {
         const codeType = detectCodeType(digitsOnly);
         setState({ phase: "looking", code: digitsOnly, codeType });
@@ -127,7 +189,6 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
             product: result.product,
             unitsPerPackage: result.unitsPerPackage,
           });
-          // Fire-and-forget log — não bloqueia UI
           logAlreadyLinked({
             sessionId: session.id,
             code: digitsOnly,
@@ -144,7 +205,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
         return;
       }
 
-      // Text path
+      // ── Caminho texto ─────────────────────────────────────────────────────
       setState({ phase: "searching", term });
       const result = await searchProductByText(term);
 
@@ -176,7 +237,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
         setState({ phase: "select_product", term, products: result.products });
       }
     },
-    [session.id, clearStateAfter, refocus]
+    [session.id, clearStateAfter, refocus, resetToIdle]
   );
 
   // ─── Camera ───────────────────────────────────────────────────────────────────
@@ -188,7 +249,8 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
         phase !== "idle" &&
         phase !== "linked" &&
         phase !== "already_linked" &&
-        phase !== "error"
+        phase !== "error" &&
+        phase !== "awaiting_barcode"
       )
         return;
       const clean = code.replace(/\D/g, "");
@@ -206,6 +268,20 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
     }
     if (e.key === "Escape") resetToIdle();
   };
+
+  // ─── Entrar no modo "produto primeiro → aguardando barcode" ───────────────────
+
+  const enterAwaitingBarcode = useCallback(() => {
+    if (state.phase !== "product_preview") return;
+    const awaitingState = {
+      phase: "awaiting_barcode" as const,
+      product: state.product,
+    };
+    awaitingProductRef.current = awaitingState;
+    setState(awaitingState);
+    setInput("");
+    setTimeout(() => inputRef.current?.focus(), 80);
+  }, [state]);
 
   // ─── Select from product list (text search) ───────────────────────────────────
 
@@ -227,7 +303,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
     [state]
   );
 
-  // ─── Linking flow ─────────────────────────────────────────────────────────────
+  // ─── Linking flow (barcode first → search product) ────────────────────────────
 
   const enterLinking = useCallback(() => {
     if (state.phase !== "not_found_barcode") return;
@@ -325,6 +401,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
       productName: state.product.descricao,
     });
     setInput("");
+    awaitingProductRef.current = null;
     clearStateAfter(2500);
     refocus();
   }, [state, session.id, clearStateAfter, refocus]);
@@ -342,11 +419,14 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
     state.phase === "select_product" ||
     state.phase === "product_preview" ||
     state.phase === "not_found_barcode";
+  // "awaiting_barcode" não está bloqueado — input deve ficar ativo
 
   const feedbackConfig = (() => {
     switch (state.phase) {
       case "already_linked":
         return { bg: "#dcfce7", border: "#16a34a", text: "#15803d", label: "JÁ VINCULADO" };
+      case "awaiting_barcode":
+        return { bg: "#f0fdf4", border: "#0d9488", text: "#0f766e", label: "PRODUTO SELECIONADO" };
       case "not_found_barcode":
         return { bg: "#fefce8", border: "#ca8a04", text: "#92400e", label: "NÃO VINCULADO" };
       case "not_found_text":
@@ -380,7 +460,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
       {/* Header */}
       <header className="bg-teal-700 text-white px-4 pt-4 pb-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-white/70 active:text-white transition-colors">
+          <Link href="/coletar" className="text-white/70 active:text-white transition-colors">
             <ArrowLeft />
           </Link>
           <div className="min-w-0 flex-1">
@@ -417,7 +497,11 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
           <div className="px-8 pt-6 pb-5">
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] text-gray-400 tracking-[0.25em] uppercase">
-                {state.phase === "idle" ? "Leia o código de barras" : "Identificação"}
+                {state.phase === "awaiting_barcode"
+                  ? "Código de barras a vincular"
+                  : state.phase === "idle"
+                  ? "Leia ou busque o produto"
+                  : "Identificação"}
               </div>
               {input && inputIsBarcode && <CodeTypeBadge type={detectCodeType(digitsOnlyInput)} />}
             </div>
@@ -428,7 +512,11 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="EAN · DUN · código interno · descrição"
+              placeholder={
+                state.phase === "awaiting_barcode"
+                  ? "EAN (13 dígitos) ou DUN (14 dígitos)"
+                  : "EAN · DUN · código interno · descrição"
+              }
               disabled={isBusy || isBlocked}
               className="w-full text-center text-2xl font-mono font-bold tracking-widest bg-transparent outline-none placeholder:text-gray-200 placeholder:text-sm placeholder:tracking-normal text-gray-800 py-1"
               autoComplete="off"
@@ -436,7 +524,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
               spellCheck={false}
             />
 
-            {state.phase === "idle" && (
+            {(state.phase === "idle" || state.phase === "awaiting_barcode") && (
               <div className="mt-2 h-px bg-gradient-to-r from-transparent via-teal-500/30 to-transparent" />
             )}
           </div>
@@ -468,6 +556,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
                   {state.unitsPerPackage && (
                     <span className="text-purple-600">{state.unitsPerPackage} un/emb</span>
                   )}
+                  <CodeTypeBadge type={state.codeType} small />
                 </div>
                 <div className="text-xs text-green-700 mt-1.5">
                   Este código já está vinculado ao produto.
@@ -475,20 +564,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
               </>
             )}
 
-            {state.phase === "not_found_barcode" && (
-              <div className="text-sm text-gray-700">
-                Código <span className="font-mono font-bold">{state.code}</span> não está vinculado a nenhum produto.
-              </div>
-            )}
-
-            {state.phase === "not_found_text" && (
-              <div className="text-sm text-gray-700">
-                Produto não localizado para{" "}
-                <span className="font-mono font-bold">"{state.term}"</span>.
-              </div>
-            )}
-
-            {state.phase === "product_preview" && (
+            {state.phase === "awaiting_barcode" && (
               <>
                 <div className="font-bold text-gray-900 text-base">{state.product.descricao}</div>
                 <div className="text-xs text-gray-500 font-mono mt-0.5">
@@ -512,7 +588,49 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
                     ))}
                   </div>
                 )}
-                {state.product.barcodes.length === 0 && (
+                <div className="text-xs text-teal-700 font-medium mt-2">
+                  Leia ou digite o código de barras para vincular a este produto.
+                </div>
+              </>
+            )}
+
+            {state.phase === "not_found_barcode" && (
+              <div className="text-sm text-gray-700">
+                Código <span className="font-mono font-bold">{state.code}</span> não está vinculado a nenhum produto.
+              </div>
+            )}
+
+            {state.phase === "not_found_text" && (
+              <div className="text-sm text-gray-700">
+                Produto não localizado para{" "}
+                <span className="font-mono font-bold">"{state.term}"</span>.
+              </div>
+            )}
+
+            {state.phase === "product_preview" && (
+              <>
+                <div className="font-bold text-gray-900 text-base">{state.product.descricao}</div>
+                <div className="text-xs text-gray-500 font-mono mt-0.5">
+                  {state.product.codigoInterno} · {state.product.unidadeMedida}
+                </div>
+                {state.product.barcodes.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {state.product.barcodes.map((b) => (
+                      <span
+                        key={b.code}
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                          b.codeType === "EAN"
+                            ? "bg-blue-50 border-blue-200 text-blue-700"
+                            : b.codeType === "DUN"
+                            ? "bg-purple-50 border-purple-200 text-purple-700"
+                            : "bg-gray-50 border-gray-200 text-gray-600"
+                        }`}
+                      >
+                        {b.codeType} {b.code}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
                   <div className="text-xs text-gray-400 mt-1">Nenhum código de barras vinculado.</div>
                 )}
               </>
@@ -528,7 +646,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
             {state.phase === "linked" && (
               <div className="text-sm text-gray-700">
                 <span className="font-bold">{state.productName}</span> — código{" "}
-                <span className="font-mono">{state.code}</span> vinculado com sucesso.
+                <span className="font-mono">{state.code}</span> vinculado.
               </div>
             )}
 
@@ -538,7 +656,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
           </div>
         )}
 
-        {/* ── DUN hint ────────────────────────────────────────────────────────── */}
+        {/* ── DUN hint (confirm_link) ──────────────────────────────────────── */}
         {state.phase === "confirm_link" && state.codeType === "DUN" && (
           <div className="bg-purple-50 border-2 border-purple-200 rounded-xl px-4 py-3 slide-up">
             <div className="text-[10px] font-bold text-purple-700 tracking-[0.2em] uppercase mb-1">
@@ -550,7 +668,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
           </div>
         )}
 
-        {/* ── Units per package (confirm_link DUN) ───────────────────────────── */}
+        {/* ── Units per package ───────────────────────────────────────────── */}
         {state.phase === "confirm_link" && state.codeType === "DUN" && (
           <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 slide-up">
             <label className="text-[10px] text-gray-400 tracking-wider uppercase block mb-1.5">
@@ -574,7 +692,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
           </div>
         )}
 
-        {/* ── LINKING — busca de produto ─────────────────────────────────────── */}
+        {/* ── LINKING — busca de produto ─────────────────────────────────── */}
         {state.phase === "linking" && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden slide-up">
             <div className="px-4 pt-3 pb-2 border-b border-gray-100">
@@ -622,7 +740,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
           </div>
         )}
 
-        {/* ── SELECT_PRODUCT — múltiplos resultados (busca por texto) ────────── */}
+        {/* ── SELECT_PRODUCT ─────────────────────────────────────────────── */}
         {state.phase === "select_product" && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden slide-up">
             <div className="px-4 pt-3 pb-2 border-b border-gray-100">
@@ -660,7 +778,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
           </div>
         )}
 
-        {/* ── ACTIONS ─────────────────────────────────────────────────────────── */}
+        {/* ── ACTIONS ────────────────────────────────────────────────────── */}
 
         {/* Idle / Looking / Searching */}
         {(state.phase === "idle" || state.phase === "looking" || state.phase === "searching") && (
@@ -688,6 +806,31 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
           </div>
         )}
 
+        {/* Awaiting barcode (product already selected) */}
+        {state.phase === "awaiting_barcode" && (
+          <div className="flex flex-col gap-2 slide-up">
+            <button
+              onClick={() => input.trim() && handleSearch(input)}
+              disabled={!input.trim() || isBusy}
+              className="w-full bg-teal-600 text-white font-bold text-base rounded-2xl py-4 active:bg-teal-700 disabled:opacity-30 transition-colors shadow-md"
+            >
+              {isBusy ? "Verificando…" : "Verificar Código"}
+            </button>
+            <button
+              onClick={() =>
+                setState({
+                  phase: "product_preview",
+                  term: state.product.codigoInterno,
+                  product: state.product,
+                })
+              }
+              className="w-full bg-white border-2 border-gray-200 text-gray-500 font-medium text-sm rounded-xl py-3 active:bg-gray-50"
+            >
+              ← Voltar ao produto
+            </button>
+          </div>
+        )}
+
         {/* Already linked */}
         {state.phase === "already_linked" && (
           <button
@@ -703,7 +846,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
           <div className="flex flex-col gap-2 slide-up">
             <button
               onClick={enterLinking}
-              className="w-full bg-teal-600 text-white font-bold text-base rounded-2xl py-4.5 active:bg-teal-700 shadow-md"
+              className="w-full bg-teal-600 text-white font-bold text-base rounded-2xl py-4 active:bg-teal-700 shadow-md"
             >
               Vincular código ao produto
             </button>
@@ -726,14 +869,22 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
           </button>
         )}
 
-        {/* Product preview — read only */}
+        {/* Product preview */}
         {state.phase === "product_preview" && (
-          <button
-            onClick={resetToIdle}
-            className="w-full bg-white border-2 border-teal-200 text-teal-700 font-semibold text-sm rounded-2xl py-3.5 active:bg-teal-50 slide-up"
-          >
-            Ler próximo
-          </button>
+          <div className="flex flex-col gap-2 slide-up">
+            <button
+              onClick={enterAwaitingBarcode}
+              className="w-full bg-teal-600 text-white font-bold text-base rounded-2xl py-4 active:bg-teal-700 shadow-md"
+            >
+              Adicionar código de barras
+            </button>
+            <button
+              onClick={resetToIdle}
+              className="w-full bg-white border-2 border-teal-200 text-teal-700 font-medium text-sm rounded-xl py-3 active:bg-teal-50"
+            >
+              Ler próximo
+            </button>
+          </div>
         )}
 
         {/* Select product — cancel */}
@@ -789,7 +940,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
           </div>
         )}
 
-        {/* Linked — auto-advances, but show button too */}
+        {/* Linked */}
         {state.phase === "linked" && (
           <button
             onClick={resetToIdle}
@@ -870,16 +1021,7 @@ function CodeTypeBadge({ type, small = false }: { type: string; small?: boolean 
 
 function CameraIcon() {
   return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
       <circle cx="12" cy="13" r="4" />
     </svg>
@@ -888,16 +1030,7 @@ function CameraIcon() {
 
 function ArrowLeft() {
   return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M19 12H5M12 5l-7 7 7 7" />
     </svg>
   );
