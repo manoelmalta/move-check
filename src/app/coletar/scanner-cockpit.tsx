@@ -7,6 +7,7 @@ import type { LookupResult } from "@/actions/scan";
 import { searchProducts } from "@/actions/product";
 import type { ProductResult } from "@/actions/product";
 import { detectCodeType } from "@/lib/barcode";
+import { CameraScanner } from "./camera-scanner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
   const [state, setState] = useState<ScanState>({ phase: "idle" });
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [quantity, setQuantity] = useState(1);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -87,6 +89,11 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
     setState({ phase: "idle" });
     refocus();
   }, [refocus]);
+
+  // Keep a ref so the camera callback always sees the latest state phase
+  // without forcing ZXing to re-register its continuous scan handler.
+  const statePhaseRef = useRef(state.phase);
+  statePhaseRef.current = state.phase;
 
   // ─── Lookup ─────────────────────────────────────────────────────────────────
 
@@ -116,6 +123,22 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
       }
     },
     [clearStateAfter, refocus]
+  );
+
+  // ─── Camera detection ────────────────────────────────────────────────────────
+
+  const handleCameraDetect = useCallback(
+    (code: string) => {
+      // Only process when the cockpit is ready for a new scan
+      const phase = statePhaseRef.current;
+      if (phase !== "idle" && phase !== "saved" && phase !== "error" && phase !== "duplicate") return;
+
+      const clean = code.replace(/\D/g, "");
+      if (!clean) return;
+      setInput(clean);
+      handleLookup(clean);
+    },
+    [handleLookup]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -366,6 +389,14 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
           </div>
         </div>
 
+        {/* Camera panel */}
+        {cameraOpen && (
+          <CameraScanner
+            onDetected={handleCameraDetect}
+            onClose={() => setCameraOpen(false)}
+          />
+        )}
+
         {/* Feedback panel */}
         {showFeedback && feedbackConfig && (
           <div
@@ -518,13 +549,22 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
 
         {/* Idle / Looking */}
         {(state.phase === "idle" || state.phase === "looking") && (
-          <button
-            onClick={() => input.trim() && handleLookup(input)}
-            disabled={!input.trim() || state.phase === "looking"}
-            className="w-full bg-[#0057B8] text-white font-bold text-lg rounded-2xl py-5 active:bg-[#003F8A] disabled:opacity-30 transition-colors shadow-md"
-          >
-            {state.phase === "looking" ? "Buscando…" : "Verificar Código"}
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => input.trim() && handleLookup(input)}
+              disabled={!input.trim() || state.phase === "looking"}
+              className="w-full bg-[#0057B8] text-white font-bold text-lg rounded-2xl py-5 active:bg-[#003F8A] disabled:opacity-30 transition-colors shadow-md"
+            >
+              {state.phase === "looking" ? "Buscando…" : "Verificar Código"}
+            </button>
+            <button
+              onClick={() => setCameraOpen((v) => !v)}
+              className="w-full flex items-center justify-center gap-2 bg-white border-2 border-gray-200 text-gray-600 font-semibold text-sm rounded-2xl py-3.5 active:bg-gray-50 transition-colors"
+            >
+              <CameraIcon />
+              {cameraOpen ? "Fechar câmera" : "Abrir câmera"}
+            </button>
+          </div>
         )}
 
         {/* Found */}
@@ -683,6 +723,24 @@ function CodeTypeBadge({ type, small = false }: { type: string; small?: boolean 
     >
       {type}
     </span>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </svg>
   );
 }
 

@@ -59,3 +59,19 @@ body {
 .status-saved { --status-bg: #dbeafe; --status-border: #0057B8; --status-text: #1e40af; }
 .status-error { --status-bg: #fee2e2; --status-border: #dc2626; --status-text: #b91c1c; }
 .status-duplicate { --status-bg: #fef3c7; --status-border: #d97706; --status-text: #92400e; }
+
+/* Camera scan line */
+@keyframes camera-scan {
+  0%   { top: 25%; }
+  50%  { top: 72%; }
+  100% { top: 25%; }
+}
+.camera-scan-line {
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  height: 2px;
+  background: rgba(0, 87, 184, 0.75);
+  box-shadow: 0 0 6px 1px rgba(0, 87, 184, 0.4);
+  animation: camera-scan 2s ease-in-out infinite;
+}
