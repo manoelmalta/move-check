@@ -5,18 +5,25 @@ import { revalidatePath } from "next/cache";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type OperationType = "PRODUCT_INVENTORY" | "PRODUCT_REGISTRATION";
+
 export type Session = {
   id: string;
   name: string;
   status: string;
+  operationType: OperationType;
   createdAt: Date;
   closedAt: Date | null;
 };
 
 export type SessionSummary = Session & {
+  // PRODUCT_INVENTORY
   totalEntries: number;
   vinculadoCount: number;
   pendenteCount: number;
+  // PRODUCT_REGISTRATION
+  totalLogs: number;
+  linkedCount: number;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -25,6 +32,7 @@ function mapSession(row: {
   id: string;
   name: string;
   status: string;
+  operation_type: string;
   created_at: string;
   closed_at: string | null;
 }): Session {
@@ -32,6 +40,7 @@ function mapSession(row: {
     id: row.id,
     name: row.name,
     status: row.status,
+    operationType: (row.operation_type as OperationType) ?? "PRODUCT_INVENTORY",
     createdAt: new Date(row.created_at),
     closedAt: row.closed_at ? new Date(row.closed_at) : null,
   };
@@ -43,7 +52,7 @@ export async function getMostRecentOpenSession(): Promise<Session | null> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("scan_sessions")
-    .select("id, name, status, created_at, closed_at")
+    .select("id, name, status, operation_type, created_at, closed_at")
     .eq("status", "open")
     .order("created_at", { ascending: false })
     .limit(1)
@@ -57,7 +66,7 @@ export async function getSessionById(id: string): Promise<Session | null> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("scan_sessions")
-    .select("id, name, status, created_at, closed_at")
+    .select("id, name, status, operation_type, created_at, closed_at")
     .eq("id", id)
     .maybeSingle();
 
@@ -69,18 +78,23 @@ export async function getSessions(): Promise<SessionSummary[]> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("scan_sessions")
-    .select("id, name, status, created_at, closed_at, scan_entries(status)")
+    .select(
+      "id, name, status, operation_type, created_at, closed_at, scan_entries(status), product_registration_logs(action)"
+    )
     .order("created_at", { ascending: false });
 
   if (error || !data) return [];
 
   return data.map((s) => {
     const entries = (s.scan_entries as { status: string }[]) ?? [];
+    const logs = (s.product_registration_logs as { action: string }[]) ?? [];
     return {
       ...mapSession(s),
       totalEntries: entries.length,
       vinculadoCount: entries.filter((e) => e.status === "VINCULADO").length,
       pendenteCount: entries.filter((e) => e.status === "PENDENTE_DE_VINCULO").length,
+      totalLogs: logs.length,
+      linkedCount: logs.filter((l) => l.action === "BARCODE_LINKED").length,
     };
   });
 }
@@ -99,10 +113,13 @@ export async function getOpenSessions(): Promise<{ id: string; name: string }[]>
 
 // ─── Write ────────────────────────────────────────────────────────────────────
 
-export async function createSession(name?: string): Promise<Session> {
+export async function createSession(
+  name?: string,
+  operationType: OperationType = "PRODUCT_INVENTORY"
+): Promise<Session> {
   const supabase = createServerClient();
   const now = new Date();
-  const autoName = `Coleta ${now.toLocaleDateString("pt-BR", {
+  const autoName = `${operationType === "PRODUCT_REGISTRATION" ? "Cadastro" : "Coleta"} ${now.toLocaleDateString("pt-BR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -110,8 +127,12 @@ export async function createSession(name?: string): Promise<Session> {
 
   const { data, error } = await supabase
     .from("scan_sessions")
-    .insert({ name: name?.trim() || autoName, status: "open" })
-    .select("id, name, status, created_at, closed_at")
+    .insert({
+      name: name?.trim() || autoName,
+      status: "open",
+      operation_type: operationType,
+    })
+    .select("id, name, status, operation_type, created_at, closed_at")
     .single();
 
   if (error || !data) throw new Error("Falha ao criar sessão");

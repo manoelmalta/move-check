@@ -18,6 +18,7 @@ export function SessionCard({ session }: Props) {
   const router = useRouter();
 
   const isOpen = session.status === "open";
+  const isRegistration = session.operationType === "PRODUCT_REGISTRATION";
 
   const handleClose = async () => {
     setLoading(true);
@@ -42,13 +43,23 @@ export function SessionCard({ session }: Props) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="font-bold text-sm text-gray-900 truncate">{session.name}</div>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span
                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wider uppercase ${
                   isOpen ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-400"
                 }`}
               >
                 {isOpen ? "Aberta" : "Fechada"}
+              </span>
+              {/* Operation type badge */}
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wider uppercase ${
+                  isRegistration
+                    ? "bg-teal-100 text-teal-700"
+                    : "bg-blue-100 text-[#0057B8]"
+                }`}
+              >
+                {isRegistration ? "Cadastro" : "Inventário"}
               </span>
               <span className="text-[10px] text-gray-300 font-mono">
                 {new Date(session.createdAt).toLocaleDateString("pt-BR", {
@@ -68,9 +79,27 @@ export function SessionCard({ session }: Props) {
 
       {/* Stats */}
       <div className="px-4 py-2.5 flex gap-4 border-b border-gray-100">
-        <Stat label="Total" value={session.totalEntries} />
-        <Stat label="Vinculadas" value={session.vinculadoCount} color="blue" />
-        <Stat label="Pendentes" value={session.pendenteCount} color={session.pendenteCount > 0 ? "amber" : "gray"} />
+        {isRegistration ? (
+          <>
+            <Stat label="Leituras" value={session.totalLogs} />
+            <Stat label="Vinculados" value={session.linkedCount} color="blue" />
+            <Stat
+              label="Já existiam"
+              value={session.totalLogs - session.linkedCount}
+              color={session.totalLogs - session.linkedCount > 0 ? "amber" : "gray"}
+            />
+          </>
+        ) : (
+          <>
+            <Stat label="Total" value={session.totalEntries} />
+            <Stat label="Vinculadas" value={session.vinculadoCount} color="blue" />
+            <Stat
+              label="Pendentes"
+              value={session.pendenteCount}
+              color={session.pendenteCount > 0 ? "amber" : "gray"}
+            />
+          </>
+        )}
       </div>
 
       {/* Confirmation dialogs */}
@@ -125,7 +154,11 @@ export function SessionCard({ session }: Props) {
         {isOpen && (
           <Link
             href={`/coletar?sessionId=${session.id}`}
-            className="flex items-center gap-1.5 bg-[#0057B8] text-white text-xs font-bold rounded-lg px-3 py-2 active:bg-[#003F8A] transition-colors"
+            className={`flex items-center gap-1.5 text-white text-xs font-bold rounded-lg px-3 py-2 transition-colors ${
+              isRegistration
+                ? "bg-teal-600 active:bg-teal-700"
+                : "bg-[#0057B8] active:bg-[#003F8A]"
+            }`}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <rect x="3" y="6" width="3" height="12" rx="0.5" />
@@ -134,7 +167,7 @@ export function SessionCard({ session }: Props) {
               <rect x="16" y="6" width="1.5" height="12" rx="0.5" />
               <rect x="19.5" y="6" width="1.5" height="12" rx="0.5" />
             </svg>
-            Coletar
+            {isRegistration ? "Cadastrar" : "Coletar"}
           </Link>
         )}
 

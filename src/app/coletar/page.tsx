@@ -1,6 +1,8 @@
 import { getMostRecentOpenSession, getSessionById } from "@/actions/session";
 import { getSessionEntries } from "@/actions/scan";
+import { getRegistrationLogs } from "@/actions/registration";
 import { ScannerCockpit } from "./scanner-cockpit";
+import { RegistrationCockpit } from "./registration-cockpit";
 import { NoSession } from "./no-session";
 import { ClosedSession } from "./closed-session";
 
@@ -21,6 +23,11 @@ export default async function ColetarPage({
 
   if (session.status === "closed") {
     return <ClosedSession session={session} />;
+  }
+
+  if (session.operationType === "PRODUCT_REGISTRATION") {
+    const initialLogs = await getRegistrationLogs(session.id);
+    return <RegistrationCockpit session={session} initialLogs={initialLogs} />;
   }
 
   const recentEntries = await getSessionEntries(session.id);

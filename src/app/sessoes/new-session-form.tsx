@@ -2,18 +2,21 @@
 
 import { useState } from "react";
 import { createSession } from "@/actions/session";
+import type { OperationType } from "@/actions/session";
 import { useRouter } from "next/navigation";
 
 export function NewSessionForm() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [operationType, setOperationType] = useState<OperationType>("PRODUCT_INVENTORY");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleCreate = async () => {
     setLoading(true);
-    await createSession(name);
+    await createSession(name, operationType);
     setName("");
+    setOperationType("PRODUCT_INVENTORY");
     setOpen(false);
     setLoading(false);
     router.refresh();
@@ -32,12 +35,62 @@ export function NewSessionForm() {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm flex flex-col gap-3">
+    <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <span className="font-bold text-sm text-gray-900">Nova Sessão</span>
         <button type="button" onClick={() => setOpen(false)} className="text-gray-400 text-xl leading-none">×</button>
       </div>
 
+      {/* Operation type selector */}
+      <div className="flex flex-col gap-1.5">
+        <div className="text-[10px] text-gray-400 tracking-wider uppercase font-medium">
+          Tipo de operação
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setOperationType("PRODUCT_INVENTORY")}
+            className={`flex flex-col items-start gap-1 rounded-xl border-2 px-3 py-3 text-left transition-colors ${
+              operationType === "PRODUCT_INVENTORY"
+                ? "border-[#0057B8] bg-blue-50"
+                : "border-gray-200 bg-white active:bg-gray-50"
+            }`}
+          >
+            <span className={`text-[10px] font-bold tracking-wider uppercase ${
+              operationType === "PRODUCT_INVENTORY" ? "text-[#0057B8]" : "text-gray-400"
+            }`}>
+              Inventário
+            </span>
+            <span className={`text-xs leading-tight ${
+              operationType === "PRODUCT_INVENTORY" ? "text-gray-700" : "text-gray-400"
+            }`}>
+              Contar quantidades físicas
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setOperationType("PRODUCT_REGISTRATION")}
+            className={`flex flex-col items-start gap-1 rounded-xl border-2 px-3 py-3 text-left transition-colors ${
+              operationType === "PRODUCT_REGISTRATION"
+                ? "border-teal-500 bg-teal-50"
+                : "border-gray-200 bg-white active:bg-gray-50"
+            }`}
+          >
+            <span className={`text-[10px] font-bold tracking-wider uppercase ${
+              operationType === "PRODUCT_REGISTRATION" ? "text-teal-700" : "text-gray-400"
+            }`}>
+              Cadastro
+            </span>
+            <span className={`text-xs leading-tight ${
+              operationType === "PRODUCT_REGISTRATION" ? "text-gray-700" : "text-gray-400"
+            }`}>
+              Vincular EAN/DUN a produtos
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Name */}
       <div className="flex flex-col gap-1">
         <label className="text-[10px] text-gray-400 tracking-wider uppercase font-medium">
           Nome da sessão
@@ -66,7 +119,11 @@ export function NewSessionForm() {
         <button
           onClick={handleCreate}
           disabled={loading}
-          className="flex-[2] bg-[#0057B8] text-white font-bold text-sm rounded-xl py-3 active:bg-[#003F8A] disabled:opacity-50 transition-colors"
+          className={`flex-[2] text-white font-bold text-sm rounded-xl py-3 disabled:opacity-50 transition-colors ${
+            operationType === "PRODUCT_REGISTRATION"
+              ? "bg-teal-600 active:bg-teal-700"
+              : "bg-[#0057B8] active:bg-[#003F8A]"
+          }`}
         >
           {loading ? "Criando…" : "Criar Sessão"}
         </button>

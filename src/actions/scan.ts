@@ -10,6 +10,7 @@ import { z } from "zod";
 export type LookupResult =
   | {
       status: "found";
+      barcodeId: string;
       codeType: string;
       unitsPerPackage: number | null;
       product: { id: string; codigoInterno: string; descricao: string; unidadeMedida: string };
@@ -26,7 +27,7 @@ export async function lookupCode(rawCode: string): Promise<LookupResult> {
 
   const { data: barcode } = await supabase
     .from("product_barcodes")
-    .select("code, code_type, units_per_package, products(id, codigo_interno, descricao, unidade_medida)")
+    .select("id, code, code_type, units_per_package, products(id, codigo_interno, descricao, unidade_medida)")
     .eq("code", code)
     .maybeSingle();
 
@@ -39,6 +40,7 @@ export async function lookupCode(rawCode: string): Promise<LookupResult> {
     };
     return {
       status: "found",
+      barcodeId: barcode.id as string,
       codeType,
       unitsPerPackage: barcode.units_per_package as number | null,
       product: {
