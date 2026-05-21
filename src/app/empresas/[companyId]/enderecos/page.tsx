@@ -94,9 +94,7 @@ export default async function EnderecosPage({
                   )}
                   <div className="flex gap-2 mt-1 text-[10px] text-gray-400">
                     {a.area && <span>Área: {a.area}</span>}
-                    {a.street && <span>Rua: {a.street}</span>}
-                    {a.level && <span>Nível: {a.level}</span>}
-                    {a.position && <span>Pos: {a.position}</span>}
+                    <span>Rua {a.rua} · Préd {a.predio} · Nív {a.nivel} · Apto {a.apto}</span>
                   </div>
                 </div>
                 <AddressActions companyId={companyId} addressId={a.id} isActive={a.isActive} />

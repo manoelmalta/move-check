@@ -10,11 +10,12 @@ export type Address = {
   id: string;
   companyId: string;
   code: string;
+  rua: string;
+  predio: string;
+  nivel: string;
+  apto: string;
   description: string | null;
   area: string | null;
-  street: string | null;
-  level: string | null;
-  position: string | null;
   notes: string | null;
   isActive: boolean;
   createdAt: Date;
@@ -25,11 +26,12 @@ function mapAddress(row: {
   id: string;
   company_id: string;
   code: string;
+  rua: string;
+  predio: string;
+  nivel: string;
+  apto: string;
   description: string | null;
   area: string | null;
-  street: string | null;
-  level: string | null;
-  position: string | null;
   notes: string | null;
   is_active: boolean;
   created_at: string;
@@ -39,11 +41,12 @@ function mapAddress(row: {
     id: row.id,
     companyId: row.company_id,
     code: row.code,
+    rua: row.rua,
+    predio: row.predio,
+    nivel: row.nivel,
+    apto: row.apto,
     description: row.description,
     area: row.area,
-    street: row.street,
-    level: row.level,
-    position: row.position,
     notes: row.notes,
     isActive: row.is_active,
     createdAt: new Date(row.created_at),
@@ -52,7 +55,7 @@ function mapAddress(row: {
 }
 
 const ADDRESS_SELECT =
-  "id, company_id, code, description, area, street, level, position, notes, is_active, created_at, updated_at";
+  "id, company_id, code, rua, predio, nivel, apto, description, area, notes, is_active, created_at, updated_at";
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
 
@@ -85,40 +88,61 @@ export async function getAddress(companyId: string, id: string): Promise<Address
   return mapAddress(data);
 }
 
-// ─── Write ────────────────────────────────────────────────────────────────────
+// ─── Schema ───────────────────────────────────────────────────────────────────
+
+// Accepts raw user input (1–2 digits for rua/predio/nivel, 1–3 for apto).
+// Normalizes via transform (zero-padding). Generated code validated by regex.
+
+const twoDigits = z
+  .string()
+  .min(1, "Obrigatório")
+  .regex(/^\d{1,2}$/, "Apenas dígitos (máx. 2)")
+  .transform((v) => v.padStart(2, "0"));
+
+const threeDigits = z
+  .string()
+  .min(1, "Obrigatório")
+  .regex(/^\d{1,3}$/, "Apenas dígitos (máx. 3)")
+  .transform((v) => v.padStart(3, "0"));
 
 const AddressInputSchema = z.object({
-  code: z.string().min(1, "Código obrigatório"),
+  rua: twoDigits,
+  predio: twoDigits,
+  nivel: twoDigits,
+  apto: threeDigits,
   description: z.string().optional(),
   area: z.string().optional(),
-  street: z.string().optional(),
-  level: z.string().optional(),
-  position: z.string().optional(),
   notes: z.string().optional(),
 });
 
-type AddressInput = z.infer<typeof AddressInputSchema>;
+type AddressInputRaw = z.input<typeof AddressInputSchema>;
+
+// ─── Write ────────────────────────────────────────────────────────────────────
 
 export async function createAddress(
   companyId: string,
-  data: AddressInput
+  data: AddressInputRaw
 ): Promise<{ ok: true; address: Address } | { ok: false; error: string }> {
   const parsed = AddressInputSchema.safeParse(data);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dados inválidos" };
   }
 
+  const { rua, predio, nivel, apto } = parsed.data;
+  const code = `${rua}-${predio}-${nivel}-${apto}`;
+
   const supabase = createServerClient();
   const { data: address, error } = await supabase
     .from("addresses")
     .insert({
       company_id: companyId,
-      code: parsed.data.code.trim(),
+      code,
+      rua,
+      predio,
+      nivel,
+      apto,
       description: parsed.data.description?.trim() || null,
       area: parsed.data.area?.trim() || null,
-      street: parsed.data.street?.trim() || null,
-      level: parsed.data.level?.trim() || null,
-      position: parsed.data.position?.trim() || null,
       notes: parsed.data.notes?.trim() || null,
       is_active: true,
     })
@@ -127,7 +151,12 @@ export async function createAddress(
 
   if (error || !address) {
     const isDuplicate = error?.code === "23505" || error?.message?.toLowerCase().includes("unique");
-    return { ok: false, error: isDuplicate ? "Endereço com esse código já existe nesta empresa" : "Erro ao criar endereço" };
+    return {
+      ok: false,
+      error: isDuplicate
+        ? "Endereço com esse código já existe nesta empresa"
+        : "Erro ao criar endereço",
+    };
   }
 
   revalidatePath(`/empresas/${companyId}/enderecos`);
@@ -137,23 +166,27 @@ export async function createAddress(
 export async function updateAddress(
   companyId: string,
   id: string,
-  data: AddressInput
+  data: AddressInputRaw
 ): Promise<{ ok: true; address: Address } | { ok: false; error: string }> {
   const parsed = AddressInputSchema.safeParse(data);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Dados inválidos" };
   }
 
+  const { rua, predio, nivel, apto } = parsed.data;
+  const code = `${rua}-${predio}-${nivel}-${apto}`;
+
   const supabase = createServerClient();
   const { data: address, error } = await supabase
     .from("addresses")
     .update({
-      code: parsed.data.code.trim(),
+      code,
+      rua,
+      predio,
+      nivel,
+      apto,
       description: parsed.data.description?.trim() || null,
       area: parsed.data.area?.trim() || null,
-      street: parsed.data.street?.trim() || null,
-      level: parsed.data.level?.trim() || null,
-      position: parsed.data.position?.trim() || null,
       notes: parsed.data.notes?.trim() || null,
     })
     .eq("company_id", companyId)
