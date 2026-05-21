@@ -260,16 +260,18 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
       });
       handleSaveResult(result, state.code, state.product.descricao, "VINCULADO");
     } else {
-      // Text-identified path
+      // Text-identified path — code_type será UNKNOWN, identification_method = método usado
       if (state.countType === null) return;
       const upk =
         state.countType === "embalagem" && state.customUnitsPerPackage
           ? parseInt(state.customUnitsPerPackage, 10)
           : undefined;
+      const identificationMethod =
+        state.identifiedBy === "codigo_interno" ? "CODIGO_INTERNO" : "DESCRICAO";
       const result = await saveProductScan({
         sessionId: session.id,
         code: state.code,
-        codeType: "CODIGO_INTERNO",
+        identificationMethod,
         quantity,
         productId: state.product.id,
         unitsPerPackage: upk && upk > 0 ? upk : undefined,
@@ -589,7 +591,8 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
             )}
             {state.phase === "duplicate" && (
               <div className="text-sm text-gray-700">
-                Código <span className="font-mono font-bold">{state.code}</span> já foi lido nesta sessão.
+                Este item já foi contado nesta sessão.{" "}
+                <span className="font-mono text-xs text-gray-400">{state.code}</span>
               </div>
             )}
           </div>
@@ -912,6 +915,16 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
             className="w-full bg-white border-2 border-gray-200 text-gray-600 font-semibold text-sm rounded-2xl py-3.5 active:bg-gray-50 slide-up"
           >
             Tentar novamente
+          </button>
+        )}
+
+        {/* Duplicate — dismiss explicitly */}
+        {state.phase === "duplicate" && (
+          <button
+            onClick={resetToIdle}
+            className="w-full bg-white border-2 border-amber-200 text-amber-700 font-semibold text-sm rounded-2xl py-3.5 active:bg-amber-50 slide-up"
+          >
+            Cancelar
           </button>
         )}
 

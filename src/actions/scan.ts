@@ -274,11 +274,20 @@ export async function searchProductByText(term: string): Promise<TextSearchResul
 }
 
 // ─── Save — produto identificado por código interno / descrição ───────────────
+//
+// Separação de responsabilidades:
+//   code_type          = tipo do código de barras (EAN/DUN/UNKNOWN) — responde
+//                        ao CHECK constraint existente no banco.
+//   identification_method = COMO o produto foi localizado (requer migration 001).
+//
+// Para buscas manuais (código interno / descrição) não há barcode, logo:
+//   code_type = 'UNKNOWN'
+//   identification_method = 'CODIGO_INTERNO' | 'DESCRICAO'
 
 const SaveProductScanSchema = z.object({
   sessionId: z.string(),
   code: z.string().min(1),
-  codeType: z.string().min(1),
+  identificationMethod: z.enum(["CODIGO_INTERNO", "DESCRICAO"]),
   quantity: z.number().int().positive(),
   productId: z.string(),
   unitsPerPackage: z.number().int().positive().optional(),
@@ -290,7 +299,8 @@ export async function saveProductScan(
   const parsed = SaveProductScanSchema.safeParse(data);
   if (!parsed.success) return { ok: false, error: "Dados inválidos" };
 
-  const { sessionId, code, codeType, quantity, productId, unitsPerPackage } = parsed.data;
+  const { sessionId, code, identificationMethod, quantity, productId, unitsPerPackage } =
+    parsed.data;
   const supabase = createServerClient();
 
   const sessionError = await assertSessionOpen(sessionId);
@@ -309,7 +319,8 @@ export async function saveProductScan(
     .insert({
       session_id: sessionId,
       code,
-      code_type: codeType,
+      code_type: "UNKNOWN",            // sem barcode físico → UNKNOWN
+      identification_method: identificationMethod,
       quantity,
       units_per_package: unitsPerPackage ?? null,
       product_id: productId,
