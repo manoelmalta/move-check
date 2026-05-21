@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getCompanyById } from "@/actions/company";
 import { getSessions } from "@/actions/session";
+import { listPendingItems } from "@/actions/pending";
 import { BrandedBackground } from "@/components/branded-background";
 import { MoveCheckLogo } from "@/components/move-check-logo";
 
@@ -16,9 +17,13 @@ export default async function CompanyHomePage({
   const company = await getCompanyById(companyId);
   if (!company) notFound();
 
-  const sessions = await getSessions(companyId);
+  const [sessions, pendingItems] = await Promise.all([
+    getSessions(companyId),
+    listPendingItems(companyId, "PENDENTE"),
+  ]);
   const openCount = sessions.filter((s) => s.status === "open").length;
   const totalInventoryEntries = sessions.reduce((a, s) => a + s.totalEntries, 0);
+  const pendingCount = pendingItems.length;
 
   return (
     <div className="min-h-dvh flex flex-col relative overflow-hidden">
@@ -64,58 +69,46 @@ export default async function CompanyHomePage({
       {/* Stats */}
       <div className="relative z-10 px-4 mb-4">
         <div className="flex gap-3">
-          <StatCard label="Sessões abertas" value={openCount} accent />
+          <StatCard label="Invent. abertos" value={openCount} accent />
           <StatCard label="Total leituras" value={totalInventoryEntries} />
-          <StatCard label="Sessões" value={sessions.length} />
+          <StatCard label="Pendências" value={pendingCount} accent={pendingCount > 0} amber={pendingCount > 0} />
         </div>
       </div>
 
       {/* Module cards */}
       <div className="relative z-10 flex-1 px-4 pb-8 flex flex-col gap-3 max-w-lg mx-auto w-full">
 
-        <Link
+        <ModuleCard
           href={`/empresas/${companyId}/inventarios`}
-          className="bg-white rounded-2xl shadow-xl px-5 py-4 flex items-center gap-4 active:bg-blue-50 transition-colors"
-        >
-          <div className="w-11 h-11 rounded-xl bg-[#0057B8] flex items-center justify-center shrink-0">
-            <BarIcon />
-          </div>
-          <div className="min-w-0">
-            <div className="font-bold text-gray-900">Inventários / Ondas</div>
-            <div className="text-xs text-gray-400 mt-0.5">
-              {openCount > 0 ? `${openCount} sessão${openCount > 1 ? "ões" : ""} aberta${openCount > 1 ? "s" : ""}` : "Gerenciar sessões de contagem"}
-            </div>
-          </div>
-          <ChevronRight />
-        </Link>
+          title="Inventários / Ondas"
+          subtitle={openCount > 0 ? `${openCount} aberto${openCount > 1 ? "s" : ""}` : "Contagens físicas de estoque"}
+          iconBg="#0057B8"
+          icon={<BarIcon />}
+        />
 
-        <Link
-          href={`/empresas/${companyId}/coletar`}
-          className="bg-white rounded-2xl shadow-xl px-5 py-4 flex items-center gap-4 active:bg-blue-50 transition-colors"
-        >
-          <div className="w-11 h-11 rounded-xl bg-[#0057B8] flex items-center justify-center shrink-0">
-            <ScanIcon />
-          </div>
-          <div className="min-w-0">
-            <div className="font-bold text-gray-900">Coletar</div>
-            <div className="text-xs text-gray-400 mt-0.5">Inventário ou Cadastro de Produto</div>
-          </div>
-          <ChevronRight />
-        </Link>
+        <ModuleCard
+          href={`/empresas/${companyId}/pendencias`}
+          title="Pendências"
+          subtitle={pendingCount > 0 ? `${pendingCount} item${pendingCount > 1 ? "s" : ""} a tratar` : "Itens não cadastrados do inventário"}
+          iconBg={pendingCount > 0 ? "#D97706" : "#6B7280"}
+          icon={<AlertIcon />}
+        />
 
-        <Link
+        <ModuleCard
           href={`/empresas/${companyId}/produtos`}
-          className="bg-white rounded-2xl shadow-xl px-5 py-4 flex items-center gap-4 active:bg-gray-50 transition-colors"
-        >
-          <div className="w-11 h-11 rounded-xl bg-gray-700 flex items-center justify-center shrink-0">
-            <BoxIcon />
-          </div>
-          <div className="min-w-0">
-            <div className="font-bold text-gray-900">Produtos</div>
-            <div className="text-xs text-gray-400 mt-0.5">Catálogo e códigos de barras</div>
-          </div>
-          <ChevronRight />
-        </Link>
+          title="Cadastro de Produtos"
+          subtitle="Catálogo, EAN, DUN, picking, endereço fixo"
+          iconBg="#1F2937"
+          icon={<BoxIcon />}
+        />
+
+        <ModuleCard
+          href={`/empresas/${companyId}/enderecos`}
+          title="Cadastro de Endereços"
+          subtitle="Malha de endereçamento do galpão"
+          iconBg="#0F766E"
+          icon={<MapPinIcon />}
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <Link
@@ -138,29 +131,57 @@ export default async function CompanyHomePage({
           </Link>
         </div>
 
-        {/* Coming soon */}
-        <div className="bg-white/10 border border-white/20 rounded-2xl px-4 py-3 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-            <MapPinIcon />
-          </div>
-          <div>
-            <div className="text-white/60 font-semibold text-sm">Endereços</div>
-            <div className="text-white/30 text-xs">Em breve</div>
-          </div>
-        </div>
-
       </div>
     </div>
   );
 }
 
-function StatCard({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
+function ModuleCard({
+  href,
+  title,
+  subtitle,
+  iconBg,
+  icon,
+}: {
+  href: string;
+  title: string;
+  subtitle: string;
+  iconBg: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className="bg-white rounded-2xl shadow-xl px-5 py-4 flex items-center gap-4 active:bg-gray-50 transition-colors"
+    >
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: iconBg }}>
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="font-bold text-gray-900">{title}</div>
+        <div className="text-xs text-gray-400 mt-0.5">{subtitle}</div>
+      </div>
+      <ChevronRight />
+    </Link>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  accent = false,
+  amber = false,
+}: {
+  label: string;
+  value: number;
+  accent?: boolean;
+  amber?: boolean;
+}) {
+  const valueColor = accent && value > 0 ? (amber ? "text-amber-300" : "text-green-300") : "text-white";
   return (
     <div className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-3 text-center">
       <div className="text-white/50 text-[10px] tracking-wider uppercase leading-tight">{label}</div>
-      <div className={`font-bold text-lg mt-0.5 ${accent && value > 0 ? "text-green-300" : "text-white"}`}>
-        {value}
-      </div>
+      <div className={`font-bold text-lg mt-0.5 ${valueColor}`}>{value}</div>
     </div>
   );
 }
@@ -177,24 +198,31 @@ function BarIcon() {
   );
 }
 
-function ScanIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="23,6 23,2 19,2"/>
-      <polyline points="1,6 1,2 5,2"/>
-      <polyline points="23,18 23,22 19,22"/>
-      <polyline points="1,18 1,22 5,22"/>
-      <line x1="7" y1="12" x2="17" y2="12"/>
-    </svg>
-  );
-}
-
 function BoxIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
       <polyline points="3.27,6.96 12,12.01 20.73,6.96"/>
       <line x1="12" y1="22.08" x2="12" y2="12"/>
+    </svg>
+  );
+}
+
+function MapPinIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+      <circle cx="12" cy="10" r="3"/>
+    </svg>
+  );
+}
+
+function AlertIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
     </svg>
   );
 }
@@ -215,15 +243,6 @@ function DownloadIcon() {
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
       <polyline points="7,10 12,15 17,10"/>
       <line x1="12" y1="15" x2="12" y2="3"/>
-    </svg>
-  );
-}
-
-function MapPinIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-      <circle cx="12" cy="10" r="3"/>
     </svg>
   );
 }

@@ -23,7 +23,7 @@ export function SessionCard({ session, companyId }: Props) {
 
   const handleClose = async () => {
     setLoading(true);
-    await closeSession(session.id);
+    await closeSession(companyId, session.id);
     setConfirm(null);
     setLoading(false);
     router.refresh();
@@ -31,7 +31,7 @@ export function SessionCard({ session, companyId }: Props) {
 
   const handleReopen = async () => {
     setLoading(true);
-    await reopenSession(session.id);
+    await reopenSession(companyId, session.id);
     setConfirm(null);
     setLoading(false);
     router.refresh();
@@ -50,7 +50,7 @@ export function SessionCard({ session, companyId }: Props) {
                   isOpen ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-400"
                 }`}
               >
-                {isOpen ? "Aberta" : "Fechada"}
+                {isOpen ? "Aberto" : "Fechado"}
               </span>
               {/* Operation type badge */}
               <span
@@ -107,7 +107,7 @@ export function SessionCard({ session, companyId }: Props) {
       {confirm === "close" && (
         <div className="px-4 py-3 bg-red-50 border-b border-red-100">
           <div className="text-xs text-red-700 mb-2">
-            <strong>Fechar sessão?</strong> Novas leituras não poderão ser adicionadas enquanto estiver fechada.
+            <strong>Fechar inventário?</strong> Novas leituras não poderão ser adicionadas enquanto estiver fechado.
           </div>
           <div className="flex gap-2">
             <button
@@ -130,7 +130,7 @@ export function SessionCard({ session, companyId }: Props) {
       {confirm === "reopen" && (
         <div className="px-4 py-3 bg-blue-50 border-b border-blue-100">
           <div className="text-xs text-blue-700 mb-2">
-            <strong>Reabrir sessão?</strong> Novas leituras poderão ser adicionadas novamente.
+            <strong>Reabrir inventário?</strong> Novas leituras poderão ser adicionadas novamente.
           </div>
           <div className="flex gap-2">
             <button
@@ -173,7 +173,7 @@ export function SessionCard({ session, companyId }: Props) {
         )}
 
         <Link
-          href={`/exportar?sessionId=${session.id}`}
+          href={`/empresas/${companyId}/exportar?sessionId=${session.id}`}
           className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 text-gray-600 text-xs font-medium rounded-lg px-3 py-2 active:bg-gray-100 transition-colors"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -189,7 +189,7 @@ export function SessionCard({ session, companyId }: Props) {
             onClick={() => setConfirm("close")}
             className="flex items-center gap-1 bg-red-50 border border-red-200 text-red-600 text-xs font-medium rounded-lg px-3 py-2 active:bg-red-100 transition-colors ml-auto"
           >
-            Fechar sessão
+            Fechar inventário
           </button>
         )}
 

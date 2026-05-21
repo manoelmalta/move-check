@@ -58,15 +58,16 @@ export async function lookupCode(companyId: string, rawCode: string): Promise<Lo
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
-async function assertSessionOpen(sessionId: string): Promise<string | null> {
+async function assertSessionOpen(companyId: string, sessionId: string): Promise<string | null> {
   const supabase = createServerClient();
   const { data } = await supabase
     .from("scan_sessions")
     .select("status")
+    .eq("company_id", companyId)
     .eq("id", sessionId)
     .maybeSingle();
 
-  if (!data) return "Sessão não encontrada";
+  if (!data) return "Sessão não encontrada nesta empresa";
   if (data.status !== "open") return "Sessão fechada — reabra para continuar coletando";
   return null;
 }
@@ -94,7 +95,7 @@ export async function saveLinkedScan(data: z.infer<typeof SaveLinkedSchema>): Pr
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
-  const sessionError = await assertSessionOpen(sessionId);
+  const sessionError = await assertSessionOpen(companyId, sessionId);
   if (sessionError) return { ok: false, error: sessionError };
 
   const { data: dup } = await supabase
@@ -145,7 +146,7 @@ export async function linkAndSave(data: z.infer<typeof LinkAndSaveSchema>): Prom
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
-  const sessionError = await assertSessionOpen(sessionId);
+  const sessionError = await assertSessionOpen(companyId, sessionId);
   if (sessionError) return { ok: false, error: sessionError };
 
   const { data: dup } = await supabase
@@ -207,7 +208,7 @@ export async function savePendingScan(data: z.infer<typeof SavePendingSchema>): 
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
-  const sessionError = await assertSessionOpen(sessionId);
+  const sessionError = await assertSessionOpen(companyId, sessionId);
   if (sessionError) return { ok: false, error: sessionError };
 
   const { data: dup } = await supabase
@@ -234,7 +235,20 @@ export async function savePendingScan(data: z.infer<typeof SavePendingSchema>): 
 
   if (error || !entry) return { ok: false, error: "Falha ao salvar leitura" };
 
+  // Gera pendência de cadastro com origem no inventário
+  await supabase
+    .from("registration_pending_items")
+    .insert({
+      company_id: companyId,
+      session_id: sessionId,
+      code,
+      code_type: codeType,
+      origin: "INVENTORY_PENDING_SCAN",
+      status: "PENDENTE",
+    });
+
   revalidatePath(`/empresas/${companyId}/inventario-produto`);
+  revalidatePath(`/empresas/${companyId}/pendencias`);
   return { ok: true, entryId: entry.id };
 }
 
@@ -308,7 +322,7 @@ export async function saveProductScan(
     parsed.data;
   const supabase = createServerClient();
 
-  const sessionError = await assertSessionOpen(sessionId);
+  const sessionError = await assertSessionOpen(companyId, sessionId);
   if (sessionError) return { ok: false, error: sessionError };
 
   const { data: dup } = await supabase
@@ -343,13 +357,14 @@ export async function saveProductScan(
 
 // ─── Entradas da sessão ───────────────────────────────────────────────────────
 
-export async function getSessionEntries(sessionId: string) {
+export async function getSessionEntries(companyId: string, sessionId: string) {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("scan_entries")
     .select(
       "id, code, code_type, status, quantity, units_per_package, created_at, products(codigo_interno, descricao)"
     )
+    .eq("company_id", companyId)
     .eq("session_id", sessionId)
     .order("created_at", { ascending: false })
     .limit(20);

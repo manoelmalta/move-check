@@ -20,7 +20,7 @@ export default async function InventarioProdutoCompanyPage({
   if (!company) notFound();
 
   const session = sessionId
-    ? await getSessionById(sessionId)
+    ? await getSessionById(companyId, sessionId)
     : await getMostRecentOpenSessionByType(companyId, "PRODUCT_INVENTORY");
 
   if (!session) {
@@ -28,10 +28,10 @@ export default async function InventarioProdutoCompanyPage({
   }
 
   if (session.status === "closed") {
-    return <ClosedSession session={session} />;
+    return <ClosedSession session={session} companyId={companyId} />;
   }
 
-  const recentEntries = await getSessionEntries(session.id);
+  const recentEntries = await getSessionEntries(companyId, session.id);
 
   return (
     <ScannerCockpit

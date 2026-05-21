@@ -21,15 +21,16 @@ export type RegLogEntry = {
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
 
-async function assertSessionOpen(sessionId: string): Promise<string | null> {
+async function assertSessionOpen(companyId: string, sessionId: string): Promise<string | null> {
   const supabase = createServerClient();
   const { data } = await supabase
     .from("scan_sessions")
     .select("status")
+    .eq("company_id", companyId)
     .eq("id", sessionId)
     .maybeSingle();
 
-  if (!data) return "Sessão não encontrada";
+  if (!data) return "Sessão não encontrada nesta empresa";
   if (data.status !== "open") return "Sessão fechada — reabra para continuar";
   return null;
 }
@@ -54,7 +55,7 @@ export async function linkBarcodeOnly(
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
-  const sessionError = await assertSessionOpen(sessionId);
+  const sessionError = await assertSessionOpen(companyId, sessionId);
   if (sessionError) return { ok: false, error: sessionError };
 
   const { data: barcode, error: barcodeError } = await supabase
@@ -115,7 +116,7 @@ export async function logAlreadyLinked(
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
-  const sessionError = await assertSessionOpen(sessionId);
+  const sessionError = await assertSessionOpen(companyId, sessionId);
   if (sessionError) return { ok: false, error: sessionError };
 
   const { data: log, error } = await supabase
@@ -139,13 +140,14 @@ export async function logAlreadyLinked(
 
 // ─── Get registration logs for session ───────────────────────────────────────
 
-export async function getRegistrationLogs(sessionId: string): Promise<RegLogEntry[]> {
+export async function getRegistrationLogs(companyId: string, sessionId: string): Promise<RegLogEntry[]> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("product_registration_logs")
     .select(
       "id, code, code_type, action, created_at, products(codigo_interno, descricao), product_barcodes(units_per_package)"
     )
+    .eq("company_id", companyId)
     .eq("session_id", sessionId)
     .order("created_at", { ascending: false })
     .limit(20);

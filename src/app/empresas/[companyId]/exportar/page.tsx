@@ -51,6 +51,7 @@ export default async function ExportarCompanyPage({
 
       <div className="flex-1 px-4 py-5 max-w-lg mx-auto w-full flex flex-col gap-4">
         <ExportPanel
+          companyId={companyId}
           sessions={sessions.map((s) => ({
             id: s.id,
             name: s.name,

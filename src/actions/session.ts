@@ -71,11 +71,12 @@ export async function getMostRecentOpenSession(companyId: string): Promise<Sessi
   return mapSession(data);
 }
 
-export async function getSessionById(id: string): Promise<Session | null> {
+export async function getSessionById(companyId: string, id: string): Promise<Session | null> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("scan_sessions")
     .select(SESSION_SELECT)
+    .eq("company_id", companyId)
     .eq("id", id)
     .maybeSingle();
 
@@ -175,38 +176,24 @@ export async function createSession(
   return mapSession(data);
 }
 
-export async function closeSession(sessionId: string): Promise<void> {
+export async function closeSession(companyId: string, sessionId: string): Promise<void> {
   const supabase = createServerClient();
-  const { data: session } = await supabase
-    .from("scan_sessions")
-    .select("company_id")
-    .eq("id", sessionId)
-    .maybeSingle();
-
   await supabase
     .from("scan_sessions")
     .update({ status: "closed", closed_at: new Date().toISOString() })
+    .eq("company_id", companyId)
     .eq("id", sessionId);
 
-  if (session?.company_id) {
-    revalidatePath(`/empresas/${session.company_id}/inventarios`);
-  }
+  revalidatePath(`/empresas/${companyId}/inventarios`);
 }
 
-export async function reopenSession(sessionId: string): Promise<void> {
+export async function reopenSession(companyId: string, sessionId: string): Promise<void> {
   const supabase = createServerClient();
-  const { data: session } = await supabase
-    .from("scan_sessions")
-    .select("company_id")
-    .eq("id", sessionId)
-    .maybeSingle();
-
   await supabase
     .from("scan_sessions")
     .update({ status: "open", closed_at: null })
+    .eq("company_id", companyId)
     .eq("id", sessionId);
 
-  if (session?.company_id) {
-    revalidatePath(`/empresas/${session.company_id}/inventarios`);
-  }
+  revalidatePath(`/empresas/${companyId}/inventarios`);
 }

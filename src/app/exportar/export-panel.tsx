@@ -13,9 +13,10 @@ type Session = {
 type Props = {
   sessions: Session[];
   preSelectedId?: string;
+  companyId: string;
 };
 
-export function ExportPanel({ sessions, preSelectedId }: Props) {
+export function ExportPanel({ sessions, preSelectedId, companyId }: Props) {
   const defaultId =
     preSelectedId ??
     sessions.find((s) => s.status === "open")?.id ??
@@ -31,7 +32,7 @@ export function ExportPanel({ sessions, preSelectedId }: Props) {
     if (!selected) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/export?sessionId=${selected}`);
+      const res = await fetch(`/api/export?sessionId=${selected}&companyId=${companyId}`);
       if (!res.ok) throw new Error("Falha ao exportar");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

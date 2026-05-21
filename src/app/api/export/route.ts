@@ -3,8 +3,12 @@ import { createServerClient } from "@/lib/supabase/server";
 
 export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get("sessionId");
+  const companyId = req.nextUrl.searchParams.get("companyId");
   if (!sessionId) {
     return NextResponse.json({ error: "sessionId required" }, { status: 400 });
+  }
+  if (!companyId) {
+    return NextResponse.json({ error: "companyId required" }, { status: 400 });
   }
 
   const supabase = createServerClient();
@@ -12,8 +16,13 @@ export async function GET(req: NextRequest) {
   const { data: session } = await supabase
     .from("scan_sessions")
     .select("name, operation_type")
+    .eq("company_id", companyId)
     .eq("id", sessionId)
     .maybeSingle();
+
+  if (!session) {
+    return NextResponse.json({ error: "Sessão não encontrada nesta empresa" }, { status: 404 });
+  }
 
   const sessionName = (session?.name as string | undefined) ?? sessionId;
   const operationType = (session?.operation_type as string | undefined) ?? "PRODUCT_INVENTORY";
@@ -27,6 +36,7 @@ export async function GET(req: NextRequest) {
       .select(
         "code, code_type, action, created_at, products(codigo_interno, descricao), product_barcodes(units_per_package)"
       )
+      .eq("company_id", companyId)
       .eq("session_id", sessionId)
       .order("created_at", { ascending: true });
 
@@ -70,6 +80,7 @@ export async function GET(req: NextRequest) {
     .select(
       "code, code_type, quantity, units_per_package, status, created_at, products(codigo_interno, descricao)"
     )
+    .eq("company_id", companyId)
     .eq("session_id", sessionId)
     .order("created_at", { ascending: true });
 

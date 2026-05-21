@@ -20,7 +20,7 @@ export default async function CadastroProdutoCompanyPage({
   if (!company) notFound();
 
   const session = sessionId
-    ? await getSessionById(sessionId)
+    ? await getSessionById(companyId, sessionId)
     : await getMostRecentOpenSessionByType(companyId, "PRODUCT_REGISTRATION");
 
   if (!session) {
@@ -28,9 +28,9 @@ export default async function CadastroProdutoCompanyPage({
   }
 
   if (session.status === "closed") {
-    return <ClosedSession session={session} />;
+    return <ClosedSession session={session} companyId={companyId} />;
   }
 
-  const initialLogs = await getRegistrationLogs(session.id);
+  const initialLogs = await getRegistrationLogs(companyId, session.id);
   return <RegistrationCockpit session={session} initialLogs={initialLogs} companyId={companyId} />;
 }

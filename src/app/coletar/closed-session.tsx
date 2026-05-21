@@ -8,15 +8,16 @@ import { MoveCheckLogo } from "@/components/move-check-logo";
 
 type Props = {
   session: { id: string; name: string; status: string };
+  companyId: string;
 };
 
-export function ClosedSession({ session }: Props) {
+export function ClosedSession({ session, companyId }: Props) {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleReopen = async () => {
     setLoading(true);
-    await reopenSession(session.id);
+    await reopenSession(companyId, session.id);
     router.refresh();
   };
 
@@ -34,7 +35,7 @@ export function ClosedSession({ session }: Props) {
           }}
         />
         <div className="relative flex items-center gap-2.5">
-          <Link href="/coletar" className="text-white/70 active:text-white transition-colors shrink-0">
+          <Link href={`/empresas/${companyId}`} className="text-white/70 active:text-white transition-colors shrink-0">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 5l-7 7 7 7" />
             </svg>
@@ -73,16 +74,16 @@ export function ClosedSession({ session }: Props) {
             {loading ? "Reabrindo…" : "Reabrir esta sessão"}
           </button>
           <Link
-            href="/sessoes"
+            href={`/empresas/${companyId}/inventarios`}
             className="w-full flex items-center justify-center bg-white border-2 border-gray-200 text-gray-600 font-medium text-sm rounded-2xl py-4 active:bg-gray-50 transition-colors"
           >
-            Escolher outra sessão
+            Escolher outro inventário
           </Link>
           <Link
-            href="/coletar"
+            href={`/empresas/${companyId}/inventario-produto`}
             className="text-center text-sm text-[#0057B8] font-medium py-1"
           >
-            Usar sessão aberta mais recente
+            Usar inventário aberto mais recente
           </Link>
         </div>
       </div>

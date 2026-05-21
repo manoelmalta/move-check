@@ -601,7 +601,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
                 {state.productName ? (
                   <><span className="font-bold">{state.productName}</span> registrado.</>
                 ) : (
-                  <>Código <span className="font-mono font-bold">{state.code}</span> salvo como pendente.</>
+                  <>Código <span className="font-mono font-bold">{state.code}</span> enviado para tratamento cadastral.</>
                 )}
               </div>
             )}
@@ -937,7 +937,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
                 onClick={handleSavePending}
                 className="flex-1 bg-amber-50 border-2 border-amber-200 text-amber-700 font-medium text-sm rounded-xl py-3 active:bg-amber-100"
               >
-                Salvar pendente
+                Gerar pendência
               </button>
             </div>
           </div>
@@ -988,7 +988,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
               onClick={handleSavePending}
               className="flex-1 bg-amber-50 border-2 border-amber-200 text-amber-700 font-medium text-sm rounded-xl py-3 active:bg-amber-100"
             >
-              Salvar pendente
+              Gerar pendência
             </button>
           </div>
         )}
