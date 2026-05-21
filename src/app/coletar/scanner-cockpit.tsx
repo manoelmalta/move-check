@@ -2,14 +2,23 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { lookupCode, saveLinkedScan, linkAndSave, savePendingScan } from "@/actions/scan";
-import type { LookupResult } from "@/actions/scan";
+import {
+  lookupCode,
+  saveLinkedScan,
+  linkAndSave,
+  savePendingScan,
+  searchProductByText,
+  saveProductScan,
+} from "@/actions/scan";
+import type { LookupResult, ProductWithBarcodes } from "@/actions/scan";
 import { searchProducts } from "@/actions/product";
 import type { ProductResult } from "@/actions/product";
 import { detectCodeType } from "@/lib/barcode";
 import { CameraScanner } from "./camera-scanner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type IdentifiedBy = "EAN" | "DUN" | "codigo_interno" | "descricao";
 
 type Entry = {
   id: string;
@@ -24,14 +33,26 @@ type Entry = {
 type ScanState =
   | { phase: "idle" }
   | { phase: "looking"; code: string; codeType: string }
+  | { phase: "searching"; term: string }
   | {
       phase: "found";
+      identifiedBy: IdentifiedBy;
       code: string;
       codeType: string;
       product: { id: string; codigoInterno: string; descricao: string; unidadeMedida: string };
       unitsPerPackage: number | null;
+      /** null = yet to be chosen (only for non-barcode identifications) */
+      countType: "unidade" | "embalagem" | null;
+      customUnitsPerPackage: string;
     }
   | { phase: "not_found"; code: string; codeType: string }
+  | { phase: "not_found_text"; term: string }
+  | {
+      phase: "select_product";
+      term: string;
+      identifiedBy: "codigo_interno" | "descricao";
+      products: ProductWithBarcodes[];
+    }
   | {
       phase: "linking";
       code: string;
@@ -70,6 +91,10 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Always-current phase ref — lets camera callback read state without re-registering
+  const statePhaseRef = useRef(state.phase);
+  statePhaseRef.current = state.phase;
+
   const refocus = useCallback(() => {
     setTimeout(() => inputRef.current?.focus(), 80);
   }, []);
@@ -90,80 +115,170 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
     refocus();
   }, [refocus]);
 
-  // Keep a ref so the camera callback always sees the latest state phase
-  // without forcing ZXing to re-register its continuous scan handler.
-  const statePhaseRef = useRef(state.phase);
-  statePhaseRef.current = state.phase;
+  // ─── Universal search ────────────────────────────────────────────────────────
 
-  // ─── Lookup ─────────────────────────────────────────────────────────────────
+  const handleSearch = useCallback(
+    async (rawTerm: string) => {
+      const term = rawTerm.trim();
+      if (!term) return;
 
-  const handleLookup = useCallback(
-    async (code: string) => {
-      const clean = code.trim().replace(/\D/g, "");
-      if (!clean) return;
-      const codeType = detectCodeType(clean);
-      setState({ phase: "looking", code: clean, codeType });
+      // Digits extracted from the term (ignoring spaces)
+      const digitsOnly = term.replace(/\D/g, "");
+      // "Pure numeric": all chars are digits (possibly separated by spaces)
+      const isPureNumeric = term.replace(/\s/g, "") === digitsOnly;
+      // EAN (13 digits) or DUN (14 digits) barcode path
+      const isBarcode = isPureNumeric && (digitsOnly.length === 13 || digitsOnly.length === 14);
 
-      const result: LookupResult = await lookupCode(clean);
+      if (isBarcode) {
+        const codeType = detectCodeType(digitsOnly);
+        setState({ phase: "looking", code: digitsOnly, codeType });
 
-      if (result.status === "found") {
-        setState({
-          phase: "found",
-          code: clean,
-          codeType,
-          product: result.product,
-          unitsPerPackage: result.unitsPerPackage,
-        });
-      } else if (result.status === "not_found") {
-        setState({ phase: "not_found", code: clean, codeType });
-      } else {
+        const result: LookupResult = await lookupCode(digitsOnly);
+        if (result.status === "found") {
+          setState({
+            phase: "found",
+            identifiedBy: result.codeType as IdentifiedBy,
+            code: digitsOnly,
+            codeType: result.codeType,
+            product: result.product,
+            unitsPerPackage: result.unitsPerPackage,
+            countType: null,
+            customUnitsPerPackage: "",
+          });
+        } else if (result.status === "not_found") {
+          setState({ phase: "not_found", code: digitsOnly, codeType: result.codeType });
+        } else {
+          setState({ phase: "error", message: result.message });
+          clearStateAfter(3000);
+          refocus();
+        }
+        return;
+      }
+
+      // Text / código interno path
+      setState({ phase: "searching", term });
+      const result = await searchProductByText(term);
+
+      if (result.status === "error") {
         setState({ phase: "error", message: result.message });
         clearStateAfter(3000);
         refocus();
+        return;
+      }
+      if (result.status === "not_found") {
+        setState({ phase: "not_found_text", term });
+        return;
+      }
+
+      const identifiedBy: "codigo_interno" | "descricao" = isPureNumeric
+        ? "codigo_interno"
+        : "descricao";
+
+      if (result.products.length === 1) {
+        const p = result.products[0];
+        setState({
+          phase: "found",
+          identifiedBy,
+          code: p.codigoInterno,
+          codeType: "CODIGO_INTERNO",
+          product: {
+            id: p.id,
+            codigoInterno: p.codigoInterno,
+            descricao: p.descricao,
+            unidadeMedida: p.unidadeMedida,
+          },
+          unitsPerPackage: null,
+          countType: null,
+          customUnitsPerPackage: "",
+        });
+      } else {
+        setState({ phase: "select_product", term, identifiedBy, products: result.products });
       }
     },
     [clearStateAfter, refocus]
   );
 
-  // ─── Camera detection ────────────────────────────────────────────────────────
+  // ─── Camera detection ─────────────────────────────────────────────────────────
 
   const handleCameraDetect = useCallback(
     (code: string) => {
-      // Only process when the cockpit is ready for a new scan
       const phase = statePhaseRef.current;
       if (phase !== "idle" && phase !== "saved" && phase !== "error" && phase !== "duplicate") return;
-
       const clean = code.replace(/\D/g, "");
       if (!clean) return;
       setInput(clean);
-      handleLookup(clean);
+      handleSearch(clean);
     },
-    [handleLookup]
+    [handleSearch]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && input.trim()) {
       e.preventDefault();
-      handleLookup(input);
+      handleSearch(input);
     }
     if (e.key === "Escape") resetToIdle();
   };
 
-  // ─── Save — código found ─────────────────────────────────────────────────
+  // ─── Select from product list ─────────────────────────────────────────────────
 
-  const handleSaveFound = useCallback(async () => {
+  const handleSelectFromList = useCallback(
+    (product: ProductWithBarcodes) => {
+      if (state.phase !== "select_product") return;
+      setState({
+        phase: "found",
+        identifiedBy: state.identifiedBy,
+        code: product.codigoInterno,
+        codeType: "CODIGO_INTERNO",
+        product: {
+          id: product.id,
+          codigoInterno: product.codigoInterno,
+          descricao: product.descricao,
+          unidadeMedida: product.unidadeMedida,
+        },
+        unitsPerPackage: null,
+        countType: null,
+        customUnitsPerPackage: "",
+      });
+    },
+    [state]
+  );
+
+  // ─── Save — found (barcode EAN/DUN) or text-identified ───────────────────────
+
+  const handleSaveConfirmed = useCallback(async () => {
     if (state.phase !== "found") return;
-    const result = await saveLinkedScan({
-      sessionId: session.id,
-      code: state.code,
-      quantity,
-      productId: state.product.id,
-      unitsPerPackage: state.unitsPerPackage ?? undefined,
-    });
-    handleSaveResult(result, state.code, state.product.descricao, "VINCULADO");
+
+    if (state.identifiedBy === "EAN" || state.identifiedBy === "DUN") {
+      // Barcode path — use existing saveLinkedScan
+      const result = await saveLinkedScan({
+        sessionId: session.id,
+        code: state.code,
+        quantity,
+        productId: state.product.id,
+        unitsPerPackage: state.unitsPerPackage ?? undefined,
+      });
+      handleSaveResult(result, state.code, state.product.descricao, "VINCULADO");
+    } else {
+      // Text-identified path
+      if (state.countType === null) return;
+      const upk =
+        state.countType === "embalagem" && state.customUnitsPerPackage
+          ? parseInt(state.customUnitsPerPackage, 10)
+          : undefined;
+      const result = await saveProductScan({
+        sessionId: session.id,
+        code: state.code,
+        codeType: "CODIGO_INTERNO",
+        quantity,
+        productId: state.product.id,
+        unitsPerPackage: upk && upk > 0 ? upk : undefined,
+      });
+      handleSaveResult(result, state.code, state.product.descricao, "VINCULADO");
+    }
   }, [state, session.id, quantity]); // eslint-disable-line
 
-  // ─── Link flow ──────────────────────────────────────────────────────────────
+  // ─── Link flow ───────────────────────────────────────────────────────────────
 
   const enterLinking = useCallback(() => {
     if (state.phase !== "not_found") return;
@@ -182,13 +297,17 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
     (query: string) => {
       if (state.phase !== "linking") return;
       setState((prev) =>
-        prev.phase === "linking" ? { ...prev, searchQuery: query, searching: query.length >= 2 } : prev
+        prev.phase === "linking"
+          ? { ...prev, searchQuery: query, searching: query.length >= 2 }
+          : prev
       );
 
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
       if (query.length < 2) {
         setState((prev) =>
-          prev.phase === "linking" ? { ...prev, searchResults: [], searching: false } : prev
+          prev.phase === "linking"
+            ? { ...prev, searchResults: [], searching: false }
+            : prev
         );
         return;
       }
@@ -196,7 +315,9 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
       searchTimerRef.current = setTimeout(async () => {
         const results = await searchProducts(query);
         setState((prev) =>
-          prev.phase === "linking" ? { ...prev, searchResults: results, searching: false } : prev
+          prev.phase === "linking"
+            ? { ...prev, searchResults: results, searching: false }
+            : prev
         );
       }, 300);
     },
@@ -230,7 +351,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
     handleSaveResult(result, state.code, state.product.descricao, "VINCULADO");
   }, [state, session.id, quantity]); // eslint-disable-line
 
-  // ─── Save pending ────────────────────────────────────────────────────────────
+  // ─── Save pending ─────────────────────────────────────────────────────────────
 
   const handleSavePending = useCallback(async () => {
     if (state.phase !== "not_found" && state.phase !== "linking") return;
@@ -242,7 +363,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
     handleSaveResult(result, state.code, null, "PENDENTE_DE_VINCULO");
   }, [state, session.id, quantity]); // eslint-disable-line
 
-  // ─── Result handler ──────────────────────────────────────────────────────────
+  // ─── Result handler ───────────────────────────────────────────────────────────
 
   const handleSaveResult = useCallback(
     (
@@ -285,12 +406,27 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
     [clearStateAfter, refocus, quantity]
   );
 
-  // ─── UI helpers ──────────────────────────────────────────────────────────────
+  // ─── UI helpers ───────────────────────────────────────────────────────────────
 
-  const isConfirming = state.phase === "found" || state.phase === "confirm_link";
-  const isDunWithUnits =
-    (state.phase === "found" && state.codeType === "DUN") ||
-    (state.phase === "confirm_link" && state.codeType === "DUN");
+  const isBarcodeFound =
+    state.phase === "found" &&
+    (state.identifiedBy === "EAN" || state.identifiedBy === "DUN");
+
+  const isTextFound =
+    state.phase === "found" &&
+    (state.identifiedBy === "codigo_interno" || state.identifiedBy === "descricao");
+
+  const needsCountType = isTextFound && state.phase === "found" && state.countType === null;
+
+  const isConfirming =
+    (isBarcodeFound) ||
+    (isTextFound && state.phase === "found" && state.countType !== null) ||
+    state.phase === "confirm_link";
+
+  const isDunBarcode = state.phase === "found" && state.codeType === "DUN";
+
+  const isTextEmbalagem =
+    isTextFound && state.phase === "found" && state.countType === "embalagem";
 
   const feedbackConfig = (() => {
     switch (state.phase) {
@@ -298,6 +434,8 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
         return { bg: "#dcfce7", border: "#16a34a", text: "#15803d", label: "PRODUTO ENCONTRADO" };
       case "not_found":
         return { bg: "#fefce8", border: "#ca8a04", text: "#92400e", label: "NÃO CADASTRADO" };
+      case "not_found_text":
+        return { bg: "#fefce8", border: "#ca8a04", text: "#92400e", label: "NÃO LOCALIZADO" };
       case "linking":
         return { bg: "#fefce8", border: "#ca8a04", text: "#92400e", label: "BUSCAR PRODUTO" };
       case "confirm_link":
@@ -311,15 +449,23 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
       case "duplicate":
         return { bg: "#fef3c7", border: "#d97706", text: "#92400e", label: "DUPLICADO" };
       case "looking":
+      case "searching":
         return { bg: "#f0f9ff", border: "#0057B8", text: "#0057B8", label: "BUSCANDO…" };
       default:
         return null;
     }
   })();
 
-  const showFeedback = feedbackConfig !== null;
+  const showFeedback = feedbackConfig !== null && state.phase !== "select_product";
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
+  // Dynamic button label
+  const digitsOnlyInput = input.replace(/\D/g, "");
+  const inputIsBarcode =
+    input.trim().replace(/\s/g, "") === digitsOnlyInput &&
+    (digitsOnlyInput.length === 13 || digitsOnlyInput.length === 14);
+  const isBusy = state.phase === "looking" || state.phase === "searching";
+
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-dvh bg-[#f4f6f9] flex flex-col">
@@ -352,7 +498,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
       {/* Main area */}
       <div className="flex-1 flex flex-col px-4 py-4 gap-3 max-w-lg mx-auto w-full overflow-y-auto">
 
-        {/* Scanner frame */}
+        {/* ── Scanner frame ──────────────────────────────────────────────────── */}
         <div className="relative bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
           {/* Corners */}
           <div className="absolute top-3 left-3 w-5 h-5 border-t-2 border-l-2 border-[#0057B8] rounded-tl-sm z-10" />
@@ -363,9 +509,9 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
           <div className="px-8 pt-6 pb-5">
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] text-gray-400 tracking-[0.25em] uppercase">
-                {state.phase === "idle" ? "Aguardando leitura" : "Código"}
+                {state.phase === "idle" ? "Aguardando leitura" : "Identificação"}
               </div>
-              {input && <CodeTypeBadge type={detectCodeType(input)} />}
+              {input && inputIsBarcode && <CodeTypeBadge type={detectCodeType(digitsOnlyInput)} />}
             </div>
 
             <input
@@ -374,10 +520,9 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="000000000000"
-              disabled={state.phase === "looking" || isConfirming || state.phase === "linking"}
-              className="w-full text-center text-3xl font-mono font-bold tracking-widest bg-transparent outline-none placeholder:text-gray-200 text-gray-800 py-1"
-              inputMode="numeric"
+              placeholder="EAN · DUN · código interno · descrição"
+              disabled={isBusy || isConfirming || state.phase === "linking" || state.phase === "select_product"}
+              className="w-full text-center text-2xl font-mono font-bold tracking-widest bg-transparent outline-none placeholder:text-gray-200 placeholder:text-sm placeholder:tracking-normal text-gray-800 py-1"
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
@@ -389,15 +534,12 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
           </div>
         </div>
 
-        {/* Camera panel */}
+        {/* ── Camera panel ───────────────────────────────────────────────────── */}
         {cameraOpen && (
-          <CameraScanner
-            onDetected={handleCameraDetect}
-            onClose={() => setCameraOpen(false)}
-          />
+          <CameraScanner onDetected={handleCameraDetect} onClose={() => setCameraOpen(false)} />
         )}
 
-        {/* Feedback panel */}
+        {/* ── Feedback panel ─────────────────────────────────────────────────── */}
         {showFeedback && feedbackConfig && (
           <div
             className="rounded-xl border-2 px-4 py-3 slide-up"
@@ -413,17 +555,24 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
             {state.phase === "found" && (
               <>
                 <div className="font-bold text-gray-900 text-base">{state.product.descricao}</div>
-                <div className="text-xs text-gray-500 font-mono mt-0.5">
-                  {state.product.codigoInterno}
+                <div className="text-xs text-gray-500 font-mono mt-0.5 flex items-center gap-2 flex-wrap">
+                  <span>{state.product.codigoInterno}</span>
                   {state.unitsPerPackage && (
-                    <span className="ml-2 text-purple-600">{state.unitsPerPackage} un/emb</span>
+                    <span className="text-purple-600">{state.unitsPerPackage} un/emb</span>
                   )}
+                  <IdentifiedByBadge identifiedBy={state.identifiedBy} />
                 </div>
               </>
             )}
             {state.phase === "not_found" && (
               <div className="text-sm text-gray-700">
                 Código <span className="font-mono font-bold">{state.code}</span> não está vinculado a nenhum produto.
+              </div>
+            )}
+            {state.phase === "not_found_text" && (
+              <div className="text-sm text-gray-700">
+                Produto não localizado para <span className="font-mono font-bold">"{state.term}"</span>.
+                Tente buscar por código interno, descrição, EAN ou DUN.
               </div>
             )}
             {state.phase === "saved" && (
@@ -446,10 +595,83 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
           </div>
         )}
 
-        {/* Qty selector — visible when confirming */}
+        {/* ── DUN warning ────────────────────────────────────────────────────── */}
+        {isDunBarcode && (
+          <div className="bg-purple-50 border-2 border-purple-200 rounded-xl px-4 py-3 slide-up">
+            <div className="text-[10px] font-bold text-purple-700 tracking-[0.2em] uppercase mb-1">
+              ⚠ Embalagem fechada (DUN)
+            </div>
+            <div className="text-sm text-purple-700">
+              Conte as embalagens fechadas.
+              {state.phase === "found" && state.unitsPerPackage ? (
+                <> Certifique-se de que cada embalagem contém <strong>{state.unitsPerPackage}</strong> unidades.</>
+              ) : null}
+              {" "}Digite a quantidade de embalagens fechadas encontradas.
+            </div>
+          </div>
+        )}
+
+        {/* ── Como você está contando? ────────────────────────────────────────── */}
+        {needsCountType && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-4 py-4 slide-up">
+            <div className="text-[10px] text-gray-400 tracking-[0.25em] uppercase mb-3">
+              Como você está contando?
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() =>
+                  setState((prev) =>
+                    prev.phase === "found" ? { ...prev, countType: "unidade" } : prev
+                  )
+                }
+                className="flex-1 bg-white border-2 border-gray-200 text-gray-700 font-semibold text-sm rounded-xl py-3.5 active:bg-gray-50 transition-colors"
+              >
+                Unidade
+              </button>
+              <button
+                onClick={() =>
+                  setState((prev) =>
+                    prev.phase === "found" ? { ...prev, countType: "embalagem" } : prev
+                  )
+                }
+                className="flex-1 bg-[#0057B8] text-white font-semibold text-sm rounded-xl py-3.5 active:bg-[#003F8A] transition-colors shadow-sm"
+              >
+                Embalagem fechada
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Embalagem — units per package (text path) ───────────────────────── */}
+        {isTextEmbalagem && state.phase === "found" && (
+          <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 slide-up">
+            <label className="text-[10px] text-gray-400 tracking-wider uppercase block mb-1.5">
+              Qtd por embalagem — opcional
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={state.customUnitsPerPackage}
+              onChange={(e) =>
+                setState((prev) =>
+                  prev.phase === "found"
+                    ? { ...prev, customUnitsPerPackage: e.target.value }
+                    : prev
+                )
+              }
+              placeholder="ex: 6"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-[#0057B8]"
+              inputMode="numeric"
+            />
+          </div>
+        )}
+
+        {/* ── Qty selector (confirming) ───────────────────────────────────────── */}
         {isConfirming && (
           <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-3 slide-up">
-            <span className="text-sm text-gray-500 font-medium">Quantidade</span>
+            <span className="text-sm text-gray-500 font-medium">
+              {isDunBarcode || isTextEmbalagem ? "Embalagens fechadas" : "Quantidade"}
+            </span>
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setQuantity((q) => Math.max(1, q - 1))}
@@ -464,8 +686,8 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
           </div>
         )}
 
-        {/* DUN units per package */}
-        {isDunWithUnits && state.phase === "confirm_link" && (
+        {/* ── DUN — units per package (confirm_link path) ────────────────────── */}
+        {state.phase === "confirm_link" && state.codeType === "DUN" && (
           <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 slide-up">
             <label className="text-[10px] text-gray-400 tracking-wider uppercase block mb-1.5">
               Qtd por embalagem (DUN) — opcional
@@ -487,7 +709,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
         )}
 
         {/* ── LINKING — busca de produto ─────────────────────────────────────── */}
-        {(state.phase === "linking") && (
+        {state.phase === "linking" && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden slide-up">
             <div className="px-4 pt-3 pb-2 border-b border-gray-100">
               <div className="text-[10px] text-gray-400 tracking-wider uppercase mb-1.5">
@@ -545,30 +767,74 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
           </div>
         )}
 
-        {/* ── ACTIONS ─────────────────────────────────────────────────────────── */}
-
-        {/* Idle / Looking */}
-        {(state.phase === "idle" || state.phase === "looking") && (
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={() => input.trim() && handleLookup(input)}
-              disabled={!input.trim() || state.phase === "looking"}
-              className="w-full bg-[#0057B8] text-white font-bold text-lg rounded-2xl py-5 active:bg-[#003F8A] disabled:opacity-30 transition-colors shadow-md"
-            >
-              {state.phase === "looking" ? "Buscando…" : "Verificar Código"}
-            </button>
-            <button
-              onClick={() => setCameraOpen((v) => !v)}
-              className="w-full flex items-center justify-center gap-2 bg-white border-2 border-gray-200 text-gray-600 font-semibold text-sm rounded-2xl py-3.5 active:bg-gray-50 transition-colors"
-            >
-              <CameraIcon />
-              {cameraOpen ? "Fechar câmera" : "Abrir câmera"}
-            </button>
+        {/* ── SELECT_PRODUCT — múltiplos resultados ──────────────────────────── */}
+        {state.phase === "select_product" && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden slide-up">
+            <div className="px-4 pt-3 pb-2 border-b border-gray-100">
+              <div className="text-[10px] text-gray-400 tracking-wider uppercase">
+                {state.products.length} produtos encontrados — selecione o correto
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5 font-mono truncate">"{state.term}"</div>
+            </div>
+            <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
+              {state.products.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => handleSelectFromList(p)}
+                  className="w-full text-left px-4 py-3 active:bg-blue-50 transition-colors"
+                >
+                  <div className="font-medium text-sm text-gray-900">{p.descricao}</div>
+                  <div className="text-[11px] text-gray-400 font-mono mt-0.5">
+                    {p.codigoInterno} · {p.unidadeMedida}
+                  </div>
+                  {p.barcodes.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {p.barcodes.slice(0, 4).map((b) => (
+                        <span
+                          key={b.code}
+                          className="font-mono text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded"
+                        >
+                          {b.code}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Found */}
-        {state.phase === "found" && (
+        {/* ── ACTIONS ─────────────────────────────────────────────────────────── */}
+
+        {/* Idle / Looking / Searching */}
+        {(state.phase === "idle" || state.phase === "looking" || state.phase === "searching") && (
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => input.trim() && handleSearch(input)}
+              disabled={!input.trim() || isBusy}
+              className="w-full bg-[#0057B8] text-white font-bold text-lg rounded-2xl py-5 active:bg-[#003F8A] disabled:opacity-30 transition-colors shadow-md"
+            >
+              {isBusy
+                ? "Buscando…"
+                : inputIsBarcode
+                ? "Verificar Código"
+                : "Buscar Produto"}
+            </button>
+            {state.phase === "idle" && (
+              <button
+                onClick={() => setCameraOpen((v) => !v)}
+                className="w-full flex items-center justify-center gap-2 bg-white border-2 border-gray-200 text-gray-600 font-semibold text-sm rounded-2xl py-3.5 active:bg-gray-50 transition-colors"
+              >
+                <CameraIcon />
+                {cameraOpen ? "Fechar câmera" : "Abrir câmera"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Found — barcode (EAN/DUN) */}
+        {isBarcodeFound && (
           <div className="flex gap-3 slide-up">
             <button
               onClick={resetToIdle}
@@ -577,7 +843,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
               Descartar
             </button>
             <button
-              onClick={handleSaveFound}
+              onClick={handleSaveConfirmed}
               className="flex-[2] bg-[#0057B8] text-white font-bold text-base rounded-2xl py-4 active:bg-[#003F8A] shadow-md"
             >
               Salvar ✓
@@ -585,7 +851,35 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
           </div>
         )}
 
-        {/* Not found */}
+        {/* Found — text identified, countType not yet chosen */}
+        {needsCountType && (
+          <button
+            onClick={resetToIdle}
+            className="w-full bg-white border-2 border-gray-200 text-gray-500 font-medium text-sm rounded-xl py-3 active:bg-gray-50 slide-up"
+          >
+            Descartar
+          </button>
+        )}
+
+        {/* Found — text identified, countType chosen */}
+        {isTextFound && !needsCountType && state.phase === "found" && (
+          <div className="flex gap-3 slide-up">
+            <button
+              onClick={resetToIdle}
+              className="flex-1 bg-white border-2 border-gray-200 text-gray-600 font-bold text-base rounded-2xl py-4 active:bg-gray-50"
+            >
+              Descartar
+            </button>
+            <button
+              onClick={handleSaveConfirmed}
+              className="flex-[2] bg-[#0057B8] text-white font-bold text-base rounded-2xl py-4 active:bg-[#003F8A] shadow-md"
+            >
+              Salvar ✓
+            </button>
+          </div>
+        )}
+
+        {/* Not found (barcode — can save pending / link) */}
         {state.phase === "not_found" && (
           <div className="flex flex-col gap-2 slide-up">
             <button
@@ -609,6 +903,26 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
               </button>
             </div>
           </div>
+        )}
+
+        {/* Not found (text — no barcode to save as pending) */}
+        {state.phase === "not_found_text" && (
+          <button
+            onClick={resetToIdle}
+            className="w-full bg-white border-2 border-gray-200 text-gray-600 font-semibold text-sm rounded-2xl py-3.5 active:bg-gray-50 slide-up"
+          >
+            Tentar novamente
+          </button>
+        )}
+
+        {/* Select product — cancel */}
+        {state.phase === "select_product" && (
+          <button
+            onClick={resetToIdle}
+            className="w-full bg-white border-2 border-gray-200 text-gray-500 font-medium text-sm rounded-xl py-3 active:bg-gray-50 slide-up"
+          >
+            Cancelar
+          </button>
         )}
 
         {/* Linking */}
@@ -672,7 +986,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
                 className="flex items-center justify-between gap-2 py-1.5 border-b border-gray-100 last:border-0"
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <CodeTypeBadge type={entry.codeType as "EAN" | "DUN" | "UNKNOWN"} small />
+                  <CodeTypeBadge type={entry.codeType} small />
                   <div className="min-w-0">
                     <div className="font-mono text-xs text-gray-700 truncate">{entry.code}</div>
                     {entry.product && (
@@ -713,7 +1027,11 @@ function CodeTypeBadge({ type, small = false }: { type: string; small?: boolean 
   const styles: Record<string, string> = {
     EAN: "bg-[#0057B8] text-white",
     DUN: "bg-purple-600 text-white",
+    CODIGO_INTERNO: "bg-teal-600 text-white",
     UNKNOWN: "bg-gray-400 text-white",
+  };
+  const labels: Record<string, string> = {
+    CODIGO_INTERNO: "INT",
   };
   return (
     <span
@@ -721,7 +1039,22 @@ function CodeTypeBadge({ type, small = false }: { type: string; small?: boolean 
         small ? "text-[9px] px-1.5 py-0.5" : "text-[10px] px-2 py-1"
       } ${styles[type] ?? styles.UNKNOWN}`}
     >
-      {type}
+      {labels[type] ?? type}
+    </span>
+  );
+}
+
+function IdentifiedByBadge({ identifiedBy }: { identifiedBy: IdentifiedBy }) {
+  const map: Record<IdentifiedBy, { label: string; cls: string }> = {
+    EAN: { label: "EAN", cls: "bg-blue-100 text-blue-700" },
+    DUN: { label: "DUN", cls: "bg-purple-100 text-purple-700" },
+    codigo_interno: { label: "Cód. interno", cls: "bg-teal-100 text-teal-700" },
+    descricao: { label: "Descrição", cls: "bg-gray-100 text-gray-600" },
+  };
+  const { label, cls } = map[identifiedBy] ?? map.EAN;
+  return (
+    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${cls}`}>
+      {label}
     </span>
   );
 }

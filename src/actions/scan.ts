@@ -229,6 +229,101 @@ export async function savePendingScan(data: z.infer<typeof SavePendingSchema>): 
   return { ok: true, entryId: entry.id };
 }
 
+// ─── Busca por texto / código interno ────────────────────────────────────────
+
+export type ProductWithBarcodes = {
+  id: string;
+  codigoInterno: string;
+  descricao: string;
+  unidadeMedida: string;
+  barcodes: Array<{ code: string; codeType: string }>;
+};
+
+export type TextSearchResult =
+  | { status: "found"; products: ProductWithBarcodes[] }
+  | { status: "not_found" }
+  | { status: "error"; message: string };
+
+export async function searchProductByText(term: string): Promise<TextSearchResult> {
+  const trimmed = term.trim();
+  if (!trimmed) return { status: "not_found" };
+
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("products")
+    .select("id, codigo_interno, descricao, unidade_medida, product_barcodes(code, code_type)")
+    .or(`codigo_interno.ilike.%${trimmed}%,descricao.ilike.%${trimmed}%`)
+    .order("descricao", { ascending: true })
+    .limit(10);
+
+  if (error) return { status: "error", message: "Falha na busca" };
+  if (!data || data.length === 0) return { status: "not_found" };
+
+  return {
+    status: "found",
+    products: data.map((p) => ({
+      id: p.id as string,
+      codigoInterno: p.codigo_interno as string,
+      descricao: p.descricao as string,
+      unidadeMedida: p.unidade_medida as string,
+      barcodes: (
+        (p.product_barcodes as Array<{ code: string; code_type: string }>) ?? []
+      ).map((b) => ({ code: b.code, codeType: b.code_type })),
+    })),
+  };
+}
+
+// ─── Save — produto identificado por código interno / descrição ───────────────
+
+const SaveProductScanSchema = z.object({
+  sessionId: z.string(),
+  code: z.string().min(1),
+  codeType: z.string().min(1),
+  quantity: z.number().int().positive(),
+  productId: z.string(),
+  unitsPerPackage: z.number().int().positive().optional(),
+});
+
+export async function saveProductScan(
+  data: z.infer<typeof SaveProductScanSchema>
+): Promise<SaveResult> {
+  const parsed = SaveProductScanSchema.safeParse(data);
+  if (!parsed.success) return { ok: false, error: "Dados inválidos" };
+
+  const { sessionId, code, codeType, quantity, productId, unitsPerPackage } = parsed.data;
+  const supabase = createServerClient();
+
+  const sessionError = await assertSessionOpen(sessionId);
+  if (sessionError) return { ok: false, error: sessionError };
+
+  const { data: dup } = await supabase
+    .from("scan_entries")
+    .select("id")
+    .eq("session_id", sessionId)
+    .eq("code", code)
+    .maybeSingle();
+  if (dup) return { ok: false, error: "Código já registrado nesta sessão" };
+
+  const { data: entry, error } = await supabase
+    .from("scan_entries")
+    .insert({
+      session_id: sessionId,
+      code,
+      code_type: codeType,
+      quantity,
+      units_per_package: unitsPerPackage ?? null,
+      product_id: productId,
+      status: "VINCULADO",
+    })
+    .select("id")
+    .single();
+
+  if (error || !entry) return { ok: false, error: "Falha ao salvar leitura" };
+
+  revalidatePath("/coletar");
+  return { ok: true, entryId: entry.id };
+}
+
 // ─── Entradas da sessão ───────────────────────────────────────────────────────
 
 export async function getSessionEntries(sessionId: string) {
