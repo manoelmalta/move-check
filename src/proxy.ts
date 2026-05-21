@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-/**
- * MOVE CHECK — Password gate (Next.js 16 proxy convention).
- * - If MOVE_CHECK_ACCESS_PASSWORD is not set, auth is skipped (local dev convenience).
- * - Authenticated sessions are marked with the "move-check-access" cookie.
- * - The cookie is set server-side by the /login server action.
- */
-export function proxy(request: NextRequest) {
+export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Always allow login page and Next.js internals
   if (
     pathname.startsWith("/login") ||
     pathname.startsWith("/_next") ||
@@ -18,7 +11,6 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // If no password is configured, skip auth
   if (!process.env.MOVE_CHECK_ACCESS_PASSWORD) {
     return NextResponse.next();
   }
