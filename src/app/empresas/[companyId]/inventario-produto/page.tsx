@@ -1,22 +1,30 @@
-import { getSessionById } from "@/actions/session";
+import { notFound } from "next/navigation";
+import { getCompanyById } from "@/actions/company";
+import { getMostRecentOpenSessionByType, getSessionById } from "@/actions/session";
 import { getSessionEntries } from "@/actions/scan";
-import { ScannerCockpit } from "../coletar/scanner-cockpit";
-import { NoSession } from "../coletar/no-session";
-import { ClosedSession } from "../coletar/closed-session";
+import { ScannerCockpit } from "@/app/coletar/scanner-cockpit";
+import { NoSession } from "@/app/coletar/no-session";
+import { ClosedSession } from "@/app/coletar/closed-session";
 
-export default async function InventarioProdutoPage({
+export default async function InventarioProdutoCompanyPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ companyId: string }>;
   searchParams: Promise<{ sessionId?: string }>;
 }) {
+  const { companyId } = await params;
   const { sessionId } = await searchParams;
+
+  const company = await getCompanyById(companyId);
+  if (!company) notFound();
 
   const session = sessionId
     ? await getSessionById(sessionId)
-    : null;
+    : await getMostRecentOpenSessionByType(companyId, "PRODUCT_INVENTORY");
 
   if (!session) {
-    return <NoSession operationType="PRODUCT_INVENTORY" />;
+    return <NoSession operationType="PRODUCT_INVENTORY" companyId={companyId} />;
   }
 
   if (session.status === "closed") {
@@ -28,7 +36,7 @@ export default async function InventarioProdutoPage({
   return (
     <ScannerCockpit
       session={session}
-      companyId={session.companyId}
+      companyId={companyId}
       initialEntries={recentEntries.map((e) => ({
         id: e.id,
         code: e.code,

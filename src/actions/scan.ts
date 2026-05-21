@@ -18,7 +18,7 @@ export type LookupResult =
   | { status: "not_found"; codeType: string }
   | { status: "error"; message: string };
 
-export async function lookupCode(rawCode: string): Promise<LookupResult> {
+export async function lookupCode(companyId: string, rawCode: string): Promise<LookupResult> {
   const code = rawCode.trim().replace(/\D/g, "");
   if (!code) return { status: "error", message: "Código vazio" };
 
@@ -28,6 +28,7 @@ export async function lookupCode(rawCode: string): Promise<LookupResult> {
   const { data: barcode } = await supabase
     .from("product_barcodes")
     .select("id, code, code_type, units_per_package, products(id, codigo_interno, descricao, unidade_medida)")
+    .eq("company_id", companyId)
     .eq("code", code)
     .maybeSingle();
 
@@ -77,6 +78,7 @@ export type SaveResult = { ok: true; entryId: string } | { ok: false; error: str
 // ─── Save — código já vinculado (found) ───────────────────────────────────────
 
 const SaveLinkedSchema = z.object({
+  companyId: z.string().uuid(),
   sessionId: z.string(),
   code: z.string().min(1),
   quantity: z.number().int().positive(),
@@ -88,7 +90,7 @@ export async function saveLinkedScan(data: z.infer<typeof SaveLinkedSchema>): Pr
   const parsed = SaveLinkedSchema.safeParse(data);
   if (!parsed.success) return { ok: false, error: "Dados inválidos" };
 
-  const { sessionId, code, quantity, productId, unitsPerPackage } = parsed.data;
+  const { companyId, sessionId, code, quantity, productId, unitsPerPackage } = parsed.data;
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
@@ -106,6 +108,7 @@ export async function saveLinkedScan(data: z.infer<typeof SaveLinkedSchema>): Pr
   const { data: entry, error } = await supabase
     .from("scan_entries")
     .insert({
+      company_id: companyId,
       session_id: sessionId,
       code,
       code_type: codeType,
@@ -119,13 +122,14 @@ export async function saveLinkedScan(data: z.infer<typeof SaveLinkedSchema>): Pr
 
   if (error || !entry) return { ok: false, error: "Falha ao salvar leitura" };
 
-  revalidatePath("/coletar");
+  revalidatePath(`/empresas/${companyId}/inventario-produto`);
   return { ok: true, entryId: entry.id };
 }
 
 // ─── Save + Link — vincula barcode ao produto e salva leitura ─────────────────
 
 const LinkAndSaveSchema = z.object({
+  companyId: z.string().uuid(),
   sessionId: z.string(),
   code: z.string().min(1),
   quantity: z.number().int().positive(),
@@ -137,7 +141,7 @@ export async function linkAndSave(data: z.infer<typeof LinkAndSaveSchema>): Prom
   const parsed = LinkAndSaveSchema.safeParse(data);
   if (!parsed.success) return { ok: false, error: "Dados inválidos" };
 
-  const { sessionId, code, quantity, productId, unitsPerPackage } = parsed.data;
+  const { companyId, sessionId, code, quantity, productId, unitsPerPackage } = parsed.data;
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
@@ -152,22 +156,23 @@ export async function linkAndSave(data: z.infer<typeof LinkAndSaveSchema>): Prom
     .maybeSingle();
   if (dup) return { ok: false, error: "Código já registrado nesta sessão" };
 
-  // Vincula permanentemente o barcode ao produto
   await supabase
     .from("product_barcodes")
     .upsert(
       {
+        company_id: companyId,
         code,
         code_type: codeType,
         product_id: productId,
         units_per_package: unitsPerPackage ?? null,
       },
-      { onConflict: "code" }
+      { onConflict: "company_id,code" }
     );
 
   const { data: entry, error } = await supabase
     .from("scan_entries")
     .insert({
+      company_id: companyId,
       session_id: sessionId,
       code,
       code_type: codeType,
@@ -181,13 +186,14 @@ export async function linkAndSave(data: z.infer<typeof LinkAndSaveSchema>): Prom
 
   if (error || !entry) return { ok: false, error: "Falha ao salvar leitura" };
 
-  revalidatePath("/coletar");
+  revalidatePath(`/empresas/${companyId}/inventario-produto`);
   return { ok: true, entryId: entry.id };
 }
 
 // ─── Save — pendente de vínculo ───────────────────────────────────────────────
 
 const SavePendingSchema = z.object({
+  companyId: z.string().uuid(),
   sessionId: z.string(),
   code: z.string().min(1),
   quantity: z.number().int().positive(),
@@ -197,7 +203,7 @@ export async function savePendingScan(data: z.infer<typeof SavePendingSchema>): 
   const parsed = SavePendingSchema.safeParse(data);
   if (!parsed.success) return { ok: false, error: "Dados inválidos" };
 
-  const { sessionId, code, quantity } = parsed.data;
+  const { companyId, sessionId, code, quantity } = parsed.data;
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
@@ -215,6 +221,7 @@ export async function savePendingScan(data: z.infer<typeof SavePendingSchema>): 
   const { data: entry, error } = await supabase
     .from("scan_entries")
     .insert({
+      company_id: companyId,
       session_id: sessionId,
       code,
       code_type: codeType,
@@ -227,7 +234,7 @@ export async function savePendingScan(data: z.infer<typeof SavePendingSchema>): 
 
   if (error || !entry) return { ok: false, error: "Falha ao salvar leitura" };
 
-  revalidatePath("/coletar");
+  revalidatePath(`/empresas/${companyId}/inventario-produto`);
   return { ok: true, entryId: entry.id };
 }
 
@@ -246,7 +253,10 @@ export type TextSearchResult =
   | { status: "not_found" }
   | { status: "error"; message: string };
 
-export async function searchProductByText(term: string): Promise<TextSearchResult> {
+export async function searchProductByText(
+  companyId: string,
+  term: string
+): Promise<TextSearchResult> {
   const trimmed = term.trim();
   if (!trimmed) return { status: "not_found" };
 
@@ -254,6 +264,7 @@ export async function searchProductByText(term: string): Promise<TextSearchResul
   const { data, error } = await supabase
     .from("products")
     .select("id, codigo_interno, descricao, unidade_medida, product_barcodes(code, code_type)")
+    .eq("company_id", companyId)
     .or(`codigo_interno.ilike.%${trimmed}%,descricao.ilike.%${trimmed}%`)
     .order("descricao", { ascending: true })
     .limit(10);
@@ -276,17 +287,9 @@ export async function searchProductByText(term: string): Promise<TextSearchResul
 }
 
 // ─── Save — produto identificado por código interno / descrição ───────────────
-//
-// Separação de responsabilidades:
-//   code_type          = tipo do código de barras (EAN/DUN/UNKNOWN) — responde
-//                        ao CHECK constraint existente no banco.
-//   identification_method = COMO o produto foi localizado (requer migration 001).
-//
-// Para buscas manuais (código interno / descrição) não há barcode, logo:
-//   code_type = 'UNKNOWN'
-//   identification_method = 'CODIGO_INTERNO' | 'DESCRICAO'
 
 const SaveProductScanSchema = z.object({
+  companyId: z.string().uuid(),
   sessionId: z.string(),
   code: z.string().min(1),
   identificationMethod: z.enum(["CODIGO_INTERNO", "DESCRICAO"]),
@@ -301,7 +304,7 @@ export async function saveProductScan(
   const parsed = SaveProductScanSchema.safeParse(data);
   if (!parsed.success) return { ok: false, error: "Dados inválidos" };
 
-  const { sessionId, code, identificationMethod, quantity, productId, unitsPerPackage } =
+  const { companyId, sessionId, code, identificationMethod, quantity, productId, unitsPerPackage } =
     parsed.data;
   const supabase = createServerClient();
 
@@ -319,9 +322,10 @@ export async function saveProductScan(
   const { data: entry, error } = await supabase
     .from("scan_entries")
     .insert({
+      company_id: companyId,
       session_id: sessionId,
       code,
-      code_type: "UNKNOWN",            // sem barcode físico → UNKNOWN
+      code_type: "UNKNOWN",
       identification_method: identificationMethod,
       quantity,
       units_per_package: unitsPerPackage ?? null,
@@ -333,7 +337,7 @@ export async function saveProductScan(
 
   if (error || !entry) return { ok: false, error: "Falha ao salvar leitura" };
 
-  revalidatePath("/coletar");
+  revalidatePath(`/empresas/${companyId}/inventario-produto`);
   return { ok: true, entryId: entry.id };
 }
 

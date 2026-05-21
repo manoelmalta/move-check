@@ -4,7 +4,9 @@ import { useState } from "react";
 import { createProduct } from "@/actions/product";
 import { useRouter } from "next/navigation";
 
-export function AddProductForm() {
+type Props = { companyId: string };
+
+export function AddProductForm({ companyId }: Props) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -20,7 +22,7 @@ export function AddProductForm() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const result = await createProduct(form);
+    const result = await createProduct(companyId, form);
     setLoading(false);
     if (result.ok) {
       setForm({ codigoInterno: "", descricao: "", unidadeMedida: "UN", observacao: "" });

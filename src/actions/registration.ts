@@ -35,11 +35,9 @@ async function assertSessionOpen(sessionId: string): Promise<string | null> {
 }
 
 // ─── Link barcode to product (Cadastro de Produto) ────────────────────────────
-//
-// Vincula o código de barras ao produto em product_barcodes e cria log
-// BARCODE_LINKED. Não salva scan_entry nem pedindo quantidade.
 
 const LinkBarcodeSchema = z.object({
+  companyId: z.string().uuid(),
   sessionId: z.string(),
   code: z.string().min(1),
   productId: z.string(),
@@ -52,7 +50,7 @@ export async function linkBarcodeOnly(
   const parsed = LinkBarcodeSchema.safeParse(data);
   if (!parsed.success) return { ok: false, error: "Dados inválidos" };
 
-  const { sessionId, code, productId, unitsPerPackage } = parsed.data;
+  const { companyId, sessionId, code, productId, unitsPerPackage } = parsed.data;
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
@@ -63,12 +61,13 @@ export async function linkBarcodeOnly(
     .from("product_barcodes")
     .upsert(
       {
+        company_id: companyId,
         code,
         code_type: codeType,
         product_id: productId,
         units_per_package: unitsPerPackage ?? null,
       },
-      { onConflict: "code" }
+      { onConflict: "company_id,code" }
     )
     .select("id")
     .single();
@@ -78,6 +77,7 @@ export async function linkBarcodeOnly(
   const { data: log, error: logError } = await supabase
     .from("product_registration_logs")
     .insert({
+      company_id: companyId,
       session_id: sessionId,
       product_id: productId,
       barcode_id: barcode.id,
@@ -90,14 +90,15 @@ export async function linkBarcodeOnly(
 
   if (logError || !log) return { ok: false, error: "Falha ao registrar ação" };
 
-  revalidatePath("/coletar");
-  revalidatePath("/produtos");
+  revalidatePath(`/empresas/${companyId}/cadastro-produto`);
+  revalidatePath(`/empresas/${companyId}/produtos`);
   return { ok: true, logId: log.id as string };
 }
 
 // ─── Log barcode already linked ───────────────────────────────────────────────
 
 const LogAlreadyLinkedSchema = z.object({
+  companyId: z.string().uuid(),
   sessionId: z.string(),
   code: z.string().min(1),
   productId: z.string(),
@@ -110,7 +111,7 @@ export async function logAlreadyLinked(
   const parsed = LogAlreadyLinkedSchema.safeParse(data);
   if (!parsed.success) return { ok: false, error: "Dados inválidos" };
 
-  const { sessionId, code, productId, barcodeId } = parsed.data;
+  const { companyId, sessionId, code, productId, barcodeId } = parsed.data;
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
@@ -120,6 +121,7 @@ export async function logAlreadyLinked(
   const { data: log, error } = await supabase
     .from("product_registration_logs")
     .insert({
+      company_id: companyId,
       session_id: sessionId,
       product_id: productId,
       barcode_id: barcodeId,
@@ -132,7 +134,6 @@ export async function logAlreadyLinked(
 
   if (error || !log) return { ok: false, error: "Falha ao registrar" };
 
-  revalidatePath("/coletar");
   return { ok: true, logId: log.id as string };
 }
 

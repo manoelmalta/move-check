@@ -9,9 +9,10 @@ import { MoveCheckLogo } from "@/components/move-check-logo";
 
 type Props = {
   operationType?: OperationType;
+  companyId?: string;
 };
 
-export function NoSession({ operationType = "PRODUCT_INVENTORY" }: Props) {
+export function NoSession({ operationType = "PRODUCT_INVENTORY", companyId }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,11 +20,14 @@ export function NoSession({ operationType = "PRODUCT_INVENTORY" }: Props) {
 
   const isRegistration = operationType === "PRODUCT_REGISTRATION";
   const label = isRegistration ? "Cadastro" : "Inventário";
-  const destRoute = isRegistration ? "/cadastro-produto" : "/inventario-produto";
+  const destRoute = companyId
+    ? `/empresas/${companyId}/${isRegistration ? "cadastro-produto" : "inventario-produto"}`
+    : isRegistration ? "/cadastro-produto" : "/inventario-produto";
 
   const handleCreate = async () => {
+    if (!companyId) { router.push("/empresas"); return; }
     setLoading(true);
-    const session = await createSession(name, operationType);
+    const session = await createSession(companyId, name, operationType);
     router.push(`${destRoute}?sessionId=${session.id}`);
   };
 

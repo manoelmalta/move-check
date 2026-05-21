@@ -33,7 +33,9 @@ function parseCsv(text: string): { rows: ImportRow[]; parseError?: string } {
 
 type Step = "idle" | "parsed" | "previewing" | "previewed" | "importing" | "done";
 
-export function ImportForm() {
+type Props = { companyId: string };
+
+export function ImportForm({ companyId }: Props) {
   const [step, setStep] = useState<Step>("idle");
   const [parseError, setParseError] = useState("");
   const [rawRows, setRawRows] = useState<ImportRow[]>([]);
@@ -74,7 +76,7 @@ export function ImportForm() {
 
   const handlePreview = async () => {
     setStep("previewing");
-    const p = await previewImport(rawRows);
+    const p = await previewImport(companyId, rawRows);
     setPreview(p);
     setStep("previewed");
   };
@@ -83,7 +85,7 @@ export function ImportForm() {
     if (!preview) return;
     setStep("importing");
     const validRows = [...preview.newRows, ...preview.updateRows];
-    const res = await executeImport(validRows);
+    const res = await executeImport(companyId, validRows);
     setResult(res);
     setStep("done");
     router.refresh();

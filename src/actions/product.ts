@@ -36,7 +36,7 @@ export type ImportPreview = {
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
 
-export async function getProducts(query?: string) {
+export async function getProducts(companyId: string, query?: string) {
   const supabase = createServerClient();
 
   let q = supabase
@@ -44,6 +44,7 @@ export async function getProducts(query?: string) {
     .select(
       "id, codigo_interno, descricao, unidade_medida, observacao, product_barcodes(code, code_type, units_per_package)"
     )
+    .eq("company_id", companyId)
     .order("descricao", { ascending: true });
 
   if (query?.trim()) {
@@ -69,13 +70,14 @@ export async function getProducts(query?: string) {
   }));
 }
 
-export async function searchProducts(query: string): Promise<ProductResult[]> {
+export async function searchProducts(companyId: string, query: string): Promise<ProductResult[]> {
   if (!query.trim()) return [];
   const supabase = createServerClient();
 
   const { data, error } = await supabase
     .from("products")
     .select("id, codigo_interno, descricao, unidade_medida, observacao")
+    .eq("company_id", companyId)
     .or(
       `codigo_interno.ilike.%${query.trim()}%,descricao.ilike.%${query.trim()}%`
     )
@@ -95,7 +97,7 @@ export async function searchProducts(query: string): Promise<ProductResult[]> {
 
 // ─── Write ────────────────────────────────────────────────────────────────────
 
-export async function createProduct(data: unknown) {
+export async function createProduct(companyId: string, data: unknown) {
   const parsed = ProductSchema.safeParse(data);
   if (!parsed.success) return { ok: false as const, error: "Dados inválidos" };
 
@@ -103,6 +105,7 @@ export async function createProduct(data: unknown) {
   const { data: product, error } = await supabase
     .from("products")
     .insert({
+      company_id: companyId,
       codigo_interno: parsed.data.codigoInterno,
       descricao: parsed.data.descricao,
       unidade_medida: parsed.data.unidadeMedida,
@@ -112,16 +115,15 @@ export async function createProduct(data: unknown) {
     .single();
 
   if (error) {
-    // Unique constraint violation (23505 = unique_violation in PostgreSQL)
     const isDuplicate =
       error.code === "23505" || error.message?.toLowerCase().includes("unique");
     return {
       ok: false as const,
-      error: isDuplicate ? "Código interno já existe" : "Erro ao criar produto",
+      error: isDuplicate ? "Código interno já existe nesta empresa" : "Erro ao criar produto",
     };
   }
 
-  revalidatePath("/produtos");
+  revalidatePath(`/empresas/${companyId}/produtos`);
   return {
     ok: true as const,
     product: {
@@ -136,7 +138,10 @@ export async function createProduct(data: unknown) {
 
 // ─── Import ───────────────────────────────────────────────────────────────────
 
-export async function previewImport(rows: ImportRow[]): Promise<ImportPreview> {
+export async function previewImport(
+  companyId: string,
+  rows: ImportRow[]
+): Promise<ImportPreview> {
   const errorRows: ImportPreview["errorRows"] = [];
   const validRows: (ImportRow & { line: number })[] = [];
   const seenCodes = new Set<string>();
@@ -164,6 +169,7 @@ export async function previewImport(rows: ImportRow[]): Promise<ImportPreview> {
   const { data: existing } = await supabase
     .from("products")
     .select("codigo_interno")
+    .eq("company_id", companyId)
     .in("codigo_interno", codes);
 
   const existingSet = new Set((existing ?? []).map((p) => p.codigo_interno as string));
@@ -187,29 +193,32 @@ export async function previewImport(rows: ImportRow[]): Promise<ImportPreview> {
   return { newRows, updateRows, errorRows };
 }
 
-export async function executeImport(rows: ImportRow[]): Promise<{ created: number; updated: number }> {
+export async function executeImport(
+  companyId: string,
+  rows: ImportRow[]
+): Promise<{ created: number; updated: number }> {
   if (rows.length === 0) return { created: 0, updated: 0 };
 
   const supabase = createServerClient();
   const codes = rows.map((r) => r.codigoInterno);
 
-  // Determine which codes already exist
   const { data: existing } = await supabase
     .from("products")
     .select("codigo_interno")
+    .eq("company_id", companyId)
     .in("codigo_interno", codes);
 
   const existingSet = new Set((existing ?? []).map((p) => p.codigo_interno as string));
 
-  // Upsert all rows in a single call
   const { error } = await supabase.from("products").upsert(
     rows.map((row) => ({
+      company_id: companyId,
       codigo_interno: row.codigoInterno,
       descricao: row.descricao,
       unidade_medida: row.unidadeMedida || "UN",
       observacao: row.observacao || null,
     })),
-    { onConflict: "codigo_interno" }
+    { onConflict: "company_id,codigo_interno" }
   );
 
   if (error) throw new Error("Falha ao importar produtos");
@@ -217,6 +226,6 @@ export async function executeImport(rows: ImportRow[]): Promise<{ created: numbe
   const created = rows.filter((r) => !existingSet.has(r.codigoInterno)).length;
   const updated = rows.filter((r) => existingSet.has(r.codigoInterno)).length;
 
-  revalidatePath("/produtos");
+  revalidatePath(`/empresas/${companyId}/produtos`);
   return { created, updated };
 }

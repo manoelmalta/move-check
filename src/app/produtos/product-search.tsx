@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 
-export function ProductSearch({ initialQuery }: { initialQuery: string }) {
+export function ProductSearch({ initialQuery, basePath = "/produtos" }: { initialQuery: string; basePath?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -15,9 +15,9 @@ export function ProductSearch({ initialQuery }: { initialQuery: string }) {
       } else {
         params.delete("q");
       }
-      router.replace(`/produtos?${params.toString()}`);
+      router.replace(`${basePath}?${params.toString()}`);
     },
-    [router, searchParams]
+    [router, searchParams, basePath]
   );
 
   return (

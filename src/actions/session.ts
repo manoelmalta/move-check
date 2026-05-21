@@ -12,8 +12,10 @@ export type Session = {
   name: string;
   status: string;
   operationType: OperationType;
+  companyId: string;
   createdAt: Date;
   closedAt: Date | null;
+  comment: string | null;
 };
 
 export type SessionSummary = Session & {
@@ -33,26 +35,33 @@ function mapSession(row: {
   name: string;
   status: string;
   operation_type: string;
+  company_id: string;
   created_at: string;
   closed_at: string | null;
+  comment?: string | null;
 }): Session {
   return {
     id: row.id,
     name: row.name,
     status: row.status,
     operationType: (row.operation_type as OperationType) ?? "PRODUCT_INVENTORY",
+    companyId: row.company_id,
     createdAt: new Date(row.created_at),
     closedAt: row.closed_at ? new Date(row.closed_at) : null,
+    comment: row.comment ?? null,
   };
 }
 
+const SESSION_SELECT = "id, name, status, operation_type, company_id, created_at, closed_at, comment";
+
 // ─── Read ─────────────────────────────────────────────────────────────────────
 
-export async function getMostRecentOpenSession(): Promise<Session | null> {
+export async function getMostRecentOpenSession(companyId: string): Promise<Session | null> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("scan_sessions")
-    .select("id, name, status, operation_type, created_at, closed_at")
+    .select(SESSION_SELECT)
+    .eq("company_id", companyId)
     .eq("status", "open")
     .order("created_at", { ascending: false })
     .limit(1)
@@ -66,7 +75,7 @@ export async function getSessionById(id: string): Promise<Session | null> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("scan_sessions")
-    .select("id, name, status, operation_type, created_at, closed_at")
+    .select(SESSION_SELECT)
     .eq("id", id)
     .maybeSingle();
 
@@ -74,13 +83,14 @@ export async function getSessionById(id: string): Promise<Session | null> {
   return mapSession(data);
 }
 
-export async function getSessions(): Promise<SessionSummary[]> {
+export async function getSessions(companyId: string): Promise<SessionSummary[]> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("scan_sessions")
     .select(
-      "id, name, status, operation_type, created_at, closed_at, scan_entries(status), product_registration_logs(action)"
+      `${SESSION_SELECT}, scan_entries(status), product_registration_logs(action)`
     )
+    .eq("company_id", companyId)
     .order("created_at", { ascending: false });
 
   if (error || !data) return [];
@@ -100,12 +110,14 @@ export async function getSessions(): Promise<SessionSummary[]> {
 }
 
 export async function getMostRecentOpenSessionByType(
+  companyId: string,
   operationType: OperationType
 ): Promise<Session | null> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("scan_sessions")
-    .select("id, name, status, operation_type, created_at, closed_at")
+    .select(SESSION_SELECT)
+    .eq("company_id", companyId)
     .eq("status", "open")
     .eq("operation_type", operationType)
     .order("created_at", { ascending: false })
@@ -116,11 +128,12 @@ export async function getMostRecentOpenSessionByType(
   return mapSession(data);
 }
 
-export async function getOpenSessions(): Promise<{ id: string; name: string }[]> {
+export async function getOpenSessions(companyId: string): Promise<{ id: string; name: string }[]> {
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("scan_sessions")
     .select("id, name")
+    .eq("company_id", companyId)
     .eq("status", "open")
     .order("created_at", { ascending: false });
 
@@ -131,8 +144,10 @@ export async function getOpenSessions(): Promise<{ id: string; name: string }[]>
 // ─── Write ────────────────────────────────────────────────────────────────────
 
 export async function createSession(
+  companyId: string,
   name?: string,
-  operationType: OperationType = "PRODUCT_INVENTORY"
+  operationType: OperationType = "PRODUCT_INVENTORY",
+  comment?: string
 ): Promise<Session> {
   const supabase = createServerClient();
   const now = new Date();
@@ -145,41 +160,53 @@ export async function createSession(
   const { data, error } = await supabase
     .from("scan_sessions")
     .insert({
+      company_id: companyId,
       name: name?.trim() || autoName,
       status: "open",
       operation_type: operationType,
+      comment: comment?.trim() || null,
     })
-    .select("id, name, status, operation_type, created_at, closed_at")
+    .select(SESSION_SELECT)
     .single();
 
   if (error || !data) throw new Error("Falha ao criar sessão");
 
-  revalidatePath("/sessoes");
-  revalidatePath("/coletar");
-  revalidatePath("/");
+  revalidatePath(`/empresas/${companyId}/inventarios`);
   return mapSession(data);
 }
 
 export async function closeSession(sessionId: string): Promise<void> {
   const supabase = createServerClient();
+  const { data: session } = await supabase
+    .from("scan_sessions")
+    .select("company_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+
   await supabase
     .from("scan_sessions")
     .update({ status: "closed", closed_at: new Date().toISOString() })
     .eq("id", sessionId);
 
-  revalidatePath("/sessoes");
-  revalidatePath("/coletar");
-  revalidatePath("/");
+  if (session?.company_id) {
+    revalidatePath(`/empresas/${session.company_id}/inventarios`);
+  }
 }
 
 export async function reopenSession(sessionId: string): Promise<void> {
   const supabase = createServerClient();
+  const { data: session } = await supabase
+    .from("scan_sessions")
+    .select("company_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+
   await supabase
     .from("scan_sessions")
     .update({ status: "open", closed_at: null })
     .eq("id", sessionId);
 
-  revalidatePath("/sessoes");
-  revalidatePath("/coletar");
-  revalidatePath("/");
+  if (session?.company_id) {
+    revalidatePath(`/empresas/${session.company_id}/inventarios`);
+  }
 }

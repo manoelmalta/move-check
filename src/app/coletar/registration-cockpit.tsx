@@ -75,12 +75,13 @@ type RegState =
 
 type Props = {
   session: { id: string; name: string };
+  companyId: string;
   initialLogs: RegLogEntry[];
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function RegistrationCockpit({ session, initialLogs }: Props) {
+export function RegistrationCockpit({ session, companyId, initialLogs }: Props) {
   const [input, setInput] = useState("");
   const [state, setState] = useState<RegState>({ phase: "idle" });
   const [logs, setLogs] = useState<RegLogEntry[]>(initialLogs);
@@ -134,7 +135,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
         if (!awaiting) { resetToIdle(); return; }
 
         setState({ phase: "looking", code: digitsOnly, codeType: detectCodeType(digitsOnly) });
-        const result = await lookupCode(digitsOnly);
+        const result = await lookupCode(companyId, digitsOnly);
 
         if (result.status === "found") {
           setState({
@@ -146,6 +147,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
             unitsPerPackage: result.unitsPerPackage,
           });
           logAlreadyLinked({
+            companyId,
             sessionId: session.id,
             code: digitsOnly,
             productId: result.product.id,
@@ -179,7 +181,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
         const codeType = detectCodeType(digitsOnly);
         setState({ phase: "looking", code: digitsOnly, codeType });
 
-        const result = await lookupCode(digitsOnly);
+        const result = await lookupCode(companyId, digitsOnly);
 
         if (result.status === "found") {
           setState({
@@ -191,6 +193,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
             unitsPerPackage: result.unitsPerPackage,
           });
           logAlreadyLinked({
+            companyId,
             sessionId: session.id,
             code: digitsOnly,
             productId: result.product.id,
@@ -208,7 +211,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
 
       // ── Caminho texto ─────────────────────────────────────────────────────
       setState({ phase: "searching", term });
-      const result = await searchProductByText(term);
+      const result = await searchProductByText(companyId, term);
 
       if (result.status === "error") {
         setState({ phase: "error", message: result.message });
@@ -339,7 +342,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
       }
 
       searchTimerRef.current = setTimeout(async () => {
-        const results = await searchProducts(query);
+        const results = await searchProducts(companyId, query);
         setState((prev) =>
           prev.phase === "linking"
             ? { ...prev, searchResults: results, searching: false }
@@ -371,6 +374,7 @@ export function RegistrationCockpit({ session, initialLogs }: Props) {
     const units = state.unitsPerPackage ? parseInt(state.unitsPerPackage, 10) : undefined;
 
     const result = await linkBarcodeOnly({
+      companyId,
       sessionId: session.id,
       code: state.code,
       productId: state.product.id,

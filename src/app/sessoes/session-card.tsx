@@ -8,11 +8,12 @@ import type { SessionSummary } from "@/actions/session";
 
 type Props = {
   session: SessionSummary;
+  companyId: string;
 };
 
 type Confirm = "close" | "reopen" | null;
 
-export function SessionCard({ session }: Props) {
+export function SessionCard({ session, companyId }: Props) {
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -153,7 +154,7 @@ export function SessionCard({ session }: Props) {
       <div className="px-4 py-2.5 flex flex-wrap gap-2">
         {isOpen && (
           <Link
-            href={`${isRegistration ? "/cadastro-produto" : "/inventario-produto"}?sessionId=${session.id}`}
+            href={`/empresas/${companyId}/${isRegistration ? "cadastro-produto" : "inventario-produto"}?sessionId=${session.id}`}
             className={`flex items-center gap-1.5 text-white text-xs font-bold rounded-lg px-3 py-2 transition-colors ${
               isRegistration
                 ? "bg-teal-600 active:bg-teal-700"

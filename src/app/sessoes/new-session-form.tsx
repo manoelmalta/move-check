@@ -5,18 +5,22 @@ import { createSession } from "@/actions/session";
 import type { OperationType } from "@/actions/session";
 import { useRouter } from "next/navigation";
 
-export function NewSessionForm() {
+type Props = { companyId: string };
+
+export function NewSessionForm({ companyId }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [operationType, setOperationType] = useState<OperationType>("PRODUCT_INVENTORY");
+  const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleCreate = async () => {
     setLoading(true);
-    await createSession(name, operationType);
+    await createSession(companyId, name, operationType, comment);
     setName("");
     setOperationType("PRODUCT_INVENTORY");
+    setComment("");
     setOpen(false);
     setLoading(false);
     router.refresh();
@@ -107,6 +111,20 @@ export function NewSessionForm() {
         <div className="text-[10px] text-gray-400 mt-0.5">
           Deixe em branco para nome automático com data e hora.
         </div>
+      </div>
+
+      {/* Comment */}
+      <div className="flex flex-col gap-1">
+        <label className="text-[10px] text-gray-400 tracking-wider uppercase font-medium">
+          Finalidade / comentário <span className="normal-case text-gray-300">(opcional)</span>
+        </label>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="ex: Cíclico mensal — área de picking"
+          rows={2}
+          className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8]/20 resize-none"
+        />
       </div>
 
       <div className="flex gap-2">

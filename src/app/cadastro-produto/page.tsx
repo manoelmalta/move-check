@@ -1,4 +1,4 @@
-import { getMostRecentOpenSessionByType, getSessionById } from "@/actions/session";
+import { getSessionById } from "@/actions/session";
 import { getRegistrationLogs } from "@/actions/registration";
 import { RegistrationCockpit } from "../coletar/registration-cockpit";
 import { NoSession } from "../coletar/no-session";
@@ -13,7 +13,7 @@ export default async function CadastroProdutoPage({
 
   const session = sessionId
     ? await getSessionById(sessionId)
-    : await getMostRecentOpenSessionByType("PRODUCT_REGISTRATION");
+    : null;
 
   if (!session) {
     return <NoSession operationType="PRODUCT_REGISTRATION" />;
@@ -24,5 +24,5 @@ export default async function CadastroProdutoPage({
   }
 
   const initialLogs = await getRegistrationLogs(session.id);
-  return <RegistrationCockpit session={session} initialLogs={initialLogs} />;
+  return <RegistrationCockpit session={session} initialLogs={initialLogs} companyId={session.companyId} />;
 }

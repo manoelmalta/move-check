@@ -1,25 +1,31 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { getCompanyById } from "@/actions/company";
 import { getSessionById } from "@/actions/session";
 import { getSessionEntries } from "@/actions/scan";
 import { getRegistrationLogs } from "@/actions/registration";
-import { ScannerCockpit } from "./scanner-cockpit";
-import { RegistrationCockpit } from "./registration-cockpit";
-import { ClosedSession } from "./closed-session";
-import { BrandedBackground } from "@/components/branded-background";
+import { ScannerCockpit } from "@/app/coletar/scanner-cockpit";
+import { RegistrationCockpit } from "@/app/coletar/registration-cockpit";
+import { ClosedSession } from "@/app/coletar/closed-session";
 import { MoveCheckLogo } from "@/components/move-check-logo";
+import { BrandedBackground } from "@/components/branded-background";
 
-export default async function ColetarPage({
+export default async function ColetarCompanyPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ companyId: string }>;
   searchParams: Promise<{ sessionId?: string }>;
 }) {
+  const { companyId } = await params;
   const { sessionId } = await searchParams;
 
-  // ── Backward-compat: ?sessionId= renders the right cockpit directly ──────
+  const company = await getCompanyById(companyId);
+  if (!company) notFound();
+
   if (sessionId) {
     const session = await getSessionById(sessionId);
-
-    if (!session) return <Hub />;
+    if (!session) return <Hub companyId={companyId} companyName={company.name} />;
 
     if (session.status === "closed") {
       return <ClosedSession session={session} />;
@@ -27,14 +33,14 @@ export default async function ColetarPage({
 
     if (session.operationType === "PRODUCT_REGISTRATION") {
       const initialLogs = await getRegistrationLogs(session.id);
-      return <RegistrationCockpit session={session} initialLogs={initialLogs} companyId={session.companyId} />;
+      return <RegistrationCockpit session={session} initialLogs={initialLogs} companyId={companyId} />;
     }
 
     const recentEntries = await getSessionEntries(session.id);
     return (
       <ScannerCockpit
         session={session}
-        companyId={session.companyId}
+        companyId={companyId}
         initialEntries={recentEntries.map((e) => ({
           id: e.id,
           code: e.code,
@@ -50,27 +56,25 @@ export default async function ColetarPage({
     );
   }
 
-  return <Hub />;
+  return <Hub companyId={companyId} companyName={company.name} />;
 }
 
-// ── Hub ───────────────────────────────────────────────────────────────────────
-
-function Hub() {
+function Hub({ companyId, companyName }: { companyId: string; companyName: string }) {
   return (
     <div className="min-h-dvh flex flex-col relative overflow-hidden">
       <BrandedBackground variant="hero" />
 
       <header className="relative z-10 px-4 pt-4 pb-3">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="text-white/70 active:text-white transition-colors shrink-0">
+        <div className="flex items-center gap-2.5">
+          <Link href={`/empresas/${companyId}`} className="text-white/70 active:text-white transition-colors shrink-0">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 5l-7 7 7 7" />
             </svg>
           </Link>
           <MoveCheckLogo size={36} priority />
           <div className="min-w-0">
-            <div className="text-[10px] text-white/55 tracking-[0.25em] uppercase">MOVE CHECK</div>
-            <div className="font-bold text-sm text-white leading-tight">Coletar</div>
+            <div className="text-[10px] text-white/55 tracking-[0.25em] uppercase">MOVE CHECK · COLETAR</div>
+            <div className="font-bold text-sm text-white leading-tight truncate max-w-[200px]">{companyName}</div>
           </div>
         </div>
       </header>
@@ -81,8 +85,8 @@ function Hub() {
         </p>
 
         <Link
-          href="/inventario-produto"
-          className="group bg-white rounded-2xl border border-white/40 shadow-xl px-5 py-5 flex items-start gap-4 active:bg-blue-50 transition-colors"
+          href={`/empresas/${companyId}/inventario-produto`}
+          className="bg-white rounded-2xl border border-white/40 shadow-xl px-5 py-5 flex items-start gap-4 active:bg-blue-50 transition-colors"
         >
           <div className="w-12 h-12 rounded-xl bg-[#0057B8] flex items-center justify-center shrink-0">
             <BarcodeIcon color="white" />
@@ -96,8 +100,8 @@ function Hub() {
         </Link>
 
         <Link
-          href="/cadastro-produto"
-          className="group bg-white rounded-2xl border border-white/40 shadow-xl px-5 py-5 flex items-start gap-4 active:bg-teal-50 transition-colors"
+          href={`/empresas/${companyId}/cadastro-produto`}
+          className="bg-white rounded-2xl border border-white/40 shadow-xl px-5 py-5 flex items-start gap-4 active:bg-teal-50 transition-colors"
         >
           <div className="w-12 h-12 rounded-xl bg-teal-600 flex items-center justify-center shrink-0">
             <LinkIcon color="white" />
@@ -111,7 +115,7 @@ function Hub() {
         </Link>
 
         <Link
-          href="/sessoes"
+          href={`/empresas/${companyId}/inventarios`}
           className="mt-2 text-center text-sm text-white font-medium py-1 active:text-white/70"
         >
           Gerenciar sessões →

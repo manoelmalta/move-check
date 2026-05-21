@@ -75,12 +75,13 @@ type ScanState =
 
 type Props = {
   session: { id: string; name: string };
+  companyId: string;
   initialEntries: Entry[];
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function ScannerCockpit({ session, initialEntries }: Props) {
+export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
   const [input, setInput] = useState("");
   const [state, setState] = useState<ScanState>({ phase: "idle" });
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
@@ -136,7 +137,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
         const codeType = detectCodeType(digitsOnly);
         setState({ phase: "looking", code: digitsOnly, codeType });
 
-        const result: LookupResult = await lookupCode(digitsOnly);
+        const result: LookupResult = await lookupCode(companyId, digitsOnly);
         if (result.status === "found") {
           setState({
             phase: "found",
@@ -160,7 +161,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
 
       // Text / código interno path
       setState({ phase: "searching", term });
-      const result = await searchProductByText(term);
+      const result = await searchProductByText(companyId, term);
 
       if (result.status === "error") {
         setState({ phase: "error", message: result.message });
@@ -255,6 +256,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
     if (state.identifiedBy === "EAN" || state.identifiedBy === "DUN") {
       // Barcode path — use existing saveLinkedScan
       const result = await saveLinkedScan({
+        companyId,
         sessionId: session.id,
         code: state.code,
         quantity,
@@ -272,6 +274,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
       const identificationMethod =
         state.identifiedBy === "codigo_interno" ? "CODIGO_INTERNO" : "DESCRICAO";
       const result = await saveProductScan({
+        companyId,
         sessionId: session.id,
         code: state.code,
         identificationMethod,
@@ -318,7 +321,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
       }
 
       searchTimerRef.current = setTimeout(async () => {
-        const results = await searchProducts(query);
+        const results = await searchProducts(companyId, query);
         setState((prev) =>
           prev.phase === "linking"
             ? { ...prev, searchResults: results, searching: false }
@@ -347,6 +350,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
     if (state.phase !== "confirm_link") return;
     const units = state.unitsPerPackage ? parseInt(state.unitsPerPackage, 10) : undefined;
     const result = await linkAndSave({
+      companyId,
       sessionId: session.id,
       code: state.code,
       quantity,
@@ -361,6 +365,7 @@ export function ScannerCockpit({ session, initialEntries }: Props) {
   const handleSavePending = useCallback(async () => {
     if (state.phase !== "not_found" && state.phase !== "linking") return;
     const result = await savePendingScan({
+      companyId,
       sessionId: session.id,
       code: state.code,
       quantity,
