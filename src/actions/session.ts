@@ -152,7 +152,7 @@ export async function createSession(
 ): Promise<Session> {
   const supabase = createServerClient();
   const now = new Date();
-  const autoName = `${operationType === "PRODUCT_REGISTRATION" ? "Cadastro" : "Coleta"} ${now.toLocaleDateString("pt-BR", {
+  const autoName = `${operationType === "PRODUCT_REGISTRATION" ? "Cadastro" : "Inventário"} ${now.toLocaleDateString("pt-BR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

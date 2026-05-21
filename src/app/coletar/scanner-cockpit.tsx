@@ -5,14 +5,11 @@ import Link from "next/link";
 import {
   lookupCode,
   saveLinkedScan,
-  linkAndSave,
   savePendingScan,
   searchProductByText,
   saveProductScan,
 } from "@/actions/scan";
 import type { LookupResult, ProductWithBarcodes } from "@/actions/scan";
-import { searchProducts } from "@/actions/product";
-import type { ProductResult } from "@/actions/product";
 import { detectCodeType } from "@/lib/barcode";
 import { CameraScanner } from "./camera-scanner";
 import { MoveCheckLogo } from "@/components/move-check-logo";
@@ -54,21 +51,6 @@ type ScanState =
       identifiedBy: "codigo_interno" | "descricao";
       products: ProductWithBarcodes[];
     }
-  | {
-      phase: "linking";
-      code: string;
-      codeType: string;
-      searchQuery: string;
-      searchResults: ProductResult[];
-      searching: boolean;
-    }
-  | {
-      phase: "confirm_link";
-      code: string;
-      codeType: string;
-      product: ProductResult;
-      unitsPerPackage: string;
-    }
   | { phase: "saved"; code: string; productName: string | null; status: string }
   | { phase: "error"; message: string }
   | { phase: "duplicate"; code: string };
@@ -90,9 +72,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
   const [cameraOpen, setCameraOpen] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Always-current phase ref — lets camera callback read state without re-registering
   const statePhaseRef = useRef(state.phase);
@@ -126,11 +106,8 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
       const term = rawTerm.trim();
       if (!term) return;
 
-      // Digits extracted from the term (ignoring spaces)
       const digitsOnly = term.replace(/\D/g, "");
-      // "Pure numeric": all chars are digits (possibly separated by spaces)
       const isPureNumeric = term.replace(/\s/g, "") === digitsOnly;
-      // EAN (13 digits) or DUN (14 digits) barcode path
       const isBarcode = isPureNumeric && (digitsOnly.length === 13 || digitsOnly.length === 14);
 
       if (isBarcode) {
@@ -199,7 +176,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
         setState({ phase: "select_product", term, identifiedBy, products: result.products });
       }
     },
-    [clearStateAfter, refocus]
+    [clearStateAfter, refocus, companyId]
   );
 
   // ─── Camera detection ─────────────────────────────────────────────────────────
@@ -248,13 +225,12 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
     [state]
   );
 
-  // ─── Save — found (barcode EAN/DUN) or text-identified ───────────────────────
+  // ─── Save — found (barcode EAN/DUN or text-identified) ───────────────────────
 
   const handleSaveConfirmed = useCallback(async () => {
     if (state.phase !== "found") return;
 
     if (state.identifiedBy === "EAN" || state.identifiedBy === "DUN") {
-      // Barcode path — use existing saveLinkedScan
       const result = await saveLinkedScan({
         companyId,
         sessionId: session.id,
@@ -265,7 +241,6 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
       });
       handleSaveResult(result, state.code, state.product.descricao, "VINCULADO");
     } else {
-      // Text-identified path — code_type será UNKNOWN, identification_method = método usado
       if (state.countType === null) return;
       const upk =
         state.countType === "embalagem" && state.customUnitsPerPackage
@@ -286,84 +261,10 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
     }
   }, [state, session.id, quantity]); // eslint-disable-line
 
-  // ─── Link flow ───────────────────────────────────────────────────────────────
-
-  const enterLinking = useCallback(() => {
-    if (state.phase !== "not_found") return;
-    setState({
-      phase: "linking",
-      code: state.code,
-      codeType: state.codeType,
-      searchQuery: "",
-      searchResults: [],
-      searching: false,
-    });
-    setTimeout(() => searchRef.current?.focus(), 100);
-  }, [state]);
-
-  const handleSearchInput = useCallback(
-    (query: string) => {
-      if (state.phase !== "linking") return;
-      setState((prev) =>
-        prev.phase === "linking"
-          ? { ...prev, searchQuery: query, searching: query.length >= 2 }
-          : prev
-      );
-
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-      if (query.length < 2) {
-        setState((prev) =>
-          prev.phase === "linking"
-            ? { ...prev, searchResults: [], searching: false }
-            : prev
-        );
-        return;
-      }
-
-      searchTimerRef.current = setTimeout(async () => {
-        const results = await searchProducts(companyId, query);
-        setState((prev) =>
-          prev.phase === "linking"
-            ? { ...prev, searchResults: results, searching: false }
-            : prev
-        );
-      }, 300);
-    },
-    [state.phase]
-  );
-
-  const handleSelectProduct = useCallback(
-    (product: ProductResult) => {
-      if (state.phase !== "linking") return;
-      setState({
-        phase: "confirm_link",
-        code: state.code,
-        codeType: state.codeType,
-        product,
-        unitsPerPackage: "",
-      });
-    },
-    [state]
-  );
-
-  const handleConfirmLink = useCallback(async () => {
-    if (state.phase !== "confirm_link") return;
-    const units = state.unitsPerPackage ? parseInt(state.unitsPerPackage, 10) : undefined;
-    const result = await linkAndSave({
-      companyId,
-      sessionId: session.id,
-      code: state.code,
-      quantity,
-      productId: state.product.id,
-      unitsPerPackage: units && units > 0 ? units : undefined,
-    });
-    handleSaveResult(result, state.code, state.product.descricao, "VINCULADO");
-  }, [state, session.id, quantity]); // eslint-disable-line
-
   // ─── Save pending ─────────────────────────────────────────────────────────────
 
   const handleSavePending = useCallback(async () => {
-    if (state.phase !== "not_found" && state.phase !== "linking") return;
+    if (state.phase !== "not_found") return;
     const result = await savePendingScan({
       companyId,
       sessionId: session.id,
@@ -430,9 +331,8 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
   const needsCountType = isTextFound && state.phase === "found" && state.countType === null;
 
   const isConfirming =
-    (isBarcodeFound) ||
-    (isTextFound && state.phase === "found" && state.countType !== null) ||
-    state.phase === "confirm_link";
+    isBarcodeFound ||
+    (isTextFound && state.phase === "found" && state.countType !== null);
 
   const isDunBarcode = state.phase === "found" && state.codeType === "DUN";
 
@@ -447,14 +347,10 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
         return { bg: "#fefce8", border: "#ca8a04", text: "#92400e", label: "NÃO CADASTRADO" };
       case "not_found_text":
         return { bg: "#fefce8", border: "#ca8a04", text: "#92400e", label: "NÃO LOCALIZADO" };
-      case "linking":
-        return { bg: "#fefce8", border: "#ca8a04", text: "#92400e", label: "BUSCAR PRODUTO" };
-      case "confirm_link":
-        return { bg: "#f0f9ff", border: "#0057B8", text: "#0057B8", label: "CONFIRMAR VÍNCULO" };
       case "saved":
         return state.status === "VINCULADO"
           ? { bg: "#dbeafe", border: "#0057B8", text: "#1e40af", label: "SALVO" }
-          : { bg: "#fef3c7", border: "#d97706", text: "#92400e", label: "SALVO COMO PENDENTE" };
+          : { bg: "#fef3c7", border: "#d97706", text: "#92400e", label: "PENDÊNCIA GERADA" };
       case "error":
         return { bg: "#fee2e2", border: "#dc2626", text: "#b91c1c", label: "ERRO" };
       case "duplicate":
@@ -469,12 +365,13 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
 
   const showFeedback = feedbackConfig !== null && state.phase !== "select_product";
 
-  // Dynamic button label
   const digitsOnlyInput = input.replace(/\D/g, "");
   const inputIsBarcode =
     input.trim().replace(/\s/g, "") === digitsOnlyInput &&
     (digitsOnlyInput.length === 13 || digitsOnlyInput.length === 14);
   const isBusy = state.phase === "looking" || state.phase === "searching";
+
+  const inventariosHref = `/empresas/${companyId}/inventarios`;
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -493,7 +390,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
           }}
         />
         <div className="relative flex items-center gap-2.5 min-w-0 flex-1">
-          <Link href="/coletar" className="text-white/70 active:text-white transition-colors shrink-0">
+          <Link href={inventariosHref} className="text-white/70 active:text-white transition-colors shrink-0">
             <ArrowLeft />
           </Link>
           <MoveCheckLogo size={28} className="shrink-0" />
@@ -504,7 +401,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
         </div>
         <div className="relative flex items-center gap-2 shrink-0">
           <Link
-            href="/sessoes"
+            href={inventariosHref}
             className="text-white/60 text-[11px] font-medium border border-white/20 rounded-lg px-2.5 py-1.5 active:bg-white/10 transition-colors"
           >
             Trocar
@@ -521,7 +418,6 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
 
         {/* ── Scanner frame ──────────────────────────────────────────────────── */}
         <div className="relative bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          {/* Corners */}
           <div className="absolute top-3 left-3 w-5 h-5 border-t-2 border-l-2 border-[#0057B8] rounded-tl-sm z-10" />
           <div className="absolute top-3 right-3 w-5 h-5 border-t-2 border-r-2 border-[#0057B8] rounded-tr-sm z-10" />
           <div className="absolute bottom-3 left-3 w-5 h-5 border-b-2 border-l-2 border-[#0057B8] rounded-bl-sm z-10" />
@@ -542,7 +438,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="EAN · DUN · código interno · descrição"
-              disabled={isBusy || isConfirming || state.phase === "linking" || state.phase === "select_product"}
+              disabled={isBusy || isConfirming || state.phase === "select_product"}
               className="w-full text-center text-2xl font-mono font-bold tracking-widest bg-transparent outline-none placeholder:text-gray-200 placeholder:text-sm placeholder:tracking-normal text-gray-800 py-1"
               autoComplete="off"
               autoCorrect="off"
@@ -588,6 +484,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
             {state.phase === "not_found" && (
               <div className="text-sm text-gray-700">
                 Código <span className="font-mono font-bold">{state.code}</span> não está vinculado a nenhum produto.
+                Gere uma pendência para tratamento cadastral.
               </div>
             )}
             {state.phase === "not_found_text" && (
@@ -610,7 +507,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
             )}
             {state.phase === "duplicate" && (
               <div className="text-sm text-gray-700">
-                Este item já foi contado nesta sessão.{" "}
+                Este item já foi contado neste inventário.{" "}
                 <span className="font-mono text-xs text-gray-400">{state.code}</span>
               </div>
             )}
@@ -721,87 +618,6 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
                 className="w-8 h-8 rounded-lg bg-[#0057B8] flex items-center justify-center text-white font-bold active:bg-[#003F8A]"
               >+</button>
             </div>
-          </div>
-        )}
-
-        {/* ── DUN — units per package (confirm_link path) ────────────────────── */}
-        {state.phase === "confirm_link" && state.codeType === "DUN" && (
-          <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 slide-up">
-            <label className="text-[10px] text-gray-400 tracking-wider uppercase block mb-1.5">
-              Qtd por embalagem (DUN) — opcional
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={state.unitsPerPackage}
-              onChange={(e) =>
-                setState((prev) =>
-                  prev.phase === "confirm_link" ? { ...prev, unitsPerPackage: e.target.value } : prev
-                )
-              }
-              placeholder="ex: 6"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono outline-none focus:border-[#0057B8]"
-              inputMode="numeric"
-            />
-          </div>
-        )}
-
-        {/* ── LINKING — busca de produto ─────────────────────────────────────── */}
-        {state.phase === "linking" && (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden slide-up">
-            <div className="px-4 pt-3 pb-2 border-b border-gray-100">
-              <div className="text-[10px] text-gray-400 tracking-wider uppercase mb-1.5">
-                Buscar produto para vincular
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  ref={searchRef}
-                  type="text"
-                  value={state.searchQuery}
-                  onChange={(e) => handleSearchInput(e.target.value)}
-                  placeholder="Código interno ou descrição…"
-                  className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#0057B8] focus:ring-1 focus:ring-[#0057B8]/20"
-                  autoComplete="off"
-                />
-                {state.searching && (
-                  <div className="w-4 h-4 border-2 border-[#0057B8] border-t-transparent rounded-full animate-spin shrink-0" />
-                )}
-              </div>
-            </div>
-
-            {state.searchResults.length > 0 && (
-              <div className="divide-y divide-gray-100 max-h-52 overflow-y-auto">
-                {state.searchResults.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => handleSelectProduct(p)}
-                    className="w-full text-left px-4 py-3 active:bg-blue-50 transition-colors"
-                  >
-                    <div className="font-medium text-sm text-gray-900">{p.descricao}</div>
-                    <div className="text-[11px] text-gray-400 font-mono mt-0.5">
-                      {p.codigoInterno} · {p.unidadeMedida}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {state.searchQuery.length >= 2 && !state.searching && state.searchResults.length === 0 && (
-              <div className="px-4 py-4 text-sm text-gray-400 text-center">
-                Nenhum produto encontrado
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── CONFIRM_LINK — produto selecionado ─────────────────────────────── */}
-        {state.phase === "confirm_link" && (
-          <div className="bg-white rounded-2xl border-2 border-[#0057B8]/30 px-4 py-3 slide-up">
-            <div className="text-[10px] text-[#0057B8] tracking-wider uppercase mb-1">
-              Produto selecionado
-            </div>
-            <div className="font-bold text-gray-900">{state.product.descricao}</div>
-            <div className="text-xs text-gray-400 font-mono mt-0.5">{state.product.codigoInterno}</div>
           </div>
         )}
 
@@ -917,29 +733,21 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
           </div>
         )}
 
-        {/* Not found (barcode — can save pending / link) */}
+        {/* Not found — only pending, no linking into catalog */}
         {state.phase === "not_found" && (
-          <div className="flex flex-col gap-2 slide-up">
+          <div className="flex gap-2 slide-up">
             <button
-              onClick={enterLinking}
-              className="w-full bg-[#0057B8] text-white font-bold text-base rounded-2xl py-4.5 active:bg-[#003F8A] shadow-md"
+              onClick={resetToIdle}
+              className="flex-1 bg-white border-2 border-gray-200 text-gray-500 font-medium text-sm rounded-xl py-3 active:bg-gray-50"
             >
-              Buscar e Vincular Produto
+              Descartar
             </button>
-            <div className="flex gap-2">
-              <button
-                onClick={resetToIdle}
-                className="flex-1 bg-white border-2 border-gray-200 text-gray-500 font-medium text-sm rounded-xl py-3 active:bg-gray-50"
-              >
-                Descartar
-              </button>
-              <button
-                onClick={handleSavePending}
-                className="flex-1 bg-amber-50 border-2 border-amber-200 text-amber-700 font-medium text-sm rounded-xl py-3 active:bg-amber-100"
-              >
-                Gerar pendência
-              </button>
-            </div>
+            <button
+              onClick={handleSavePending}
+              className="flex-[2] bg-amber-500 text-white font-bold text-sm rounded-xl py-3 active:bg-amber-600 shadow-sm"
+            >
+              Gerar pendência
+            </button>
           </div>
         )}
 
@@ -953,7 +761,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
           </button>
         )}
 
-        {/* Duplicate — dismiss explicitly */}
+        {/* Duplicate */}
         {state.phase === "duplicate" && (
           <button
             onClick={resetToIdle}
@@ -971,53 +779,6 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
           >
             Cancelar
           </button>
-        )}
-
-        {/* Linking */}
-        {state.phase === "linking" && (
-          <div className="flex gap-2 slide-up">
-            <button
-              onClick={() =>
-                setState({ phase: "not_found", code: state.code, codeType: state.codeType })
-              }
-              className="flex-1 bg-white border-2 border-gray-200 text-gray-500 font-medium text-sm rounded-xl py-3 active:bg-gray-50"
-            >
-              ← Voltar
-            </button>
-            <button
-              onClick={handleSavePending}
-              className="flex-1 bg-amber-50 border-2 border-amber-200 text-amber-700 font-medium text-sm rounded-xl py-3 active:bg-amber-100"
-            >
-              Gerar pendência
-            </button>
-          </div>
-        )}
-
-        {/* Confirm link */}
-        {state.phase === "confirm_link" && (
-          <div className="flex gap-3 slide-up">
-            <button
-              onClick={() =>
-                setState({
-                  phase: "linking",
-                  code: state.code,
-                  codeType: state.codeType,
-                  searchQuery: "",
-                  searchResults: [],
-                  searching: false,
-                })
-              }
-              className="flex-1 bg-white border-2 border-gray-200 text-gray-600 font-bold text-base rounded-2xl py-4 active:bg-gray-50"
-            >
-              ← Trocar
-            </button>
-            <button
-              onClick={handleConfirmLink}
-              className="flex-[2] bg-[#0057B8] text-white font-bold text-base rounded-2xl py-4 active:bg-[#003F8A] shadow-md"
-            >
-              Vincular e Salvar ✓
-            </button>
-          </div>
         )}
       </div>
 
@@ -1109,16 +870,7 @@ function IdentifiedByBadge({ identifiedBy }: { identifiedBy: IdentifiedBy }) {
 
 function CameraIcon() {
   return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
       <circle cx="12" cy="13" r="4" />
     </svg>
@@ -1127,16 +879,7 @@ function CameraIcon() {
 
 function ArrowLeft() {
   return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M19 12H5M12 5l-7 7 7 7" />
     </svg>
   );

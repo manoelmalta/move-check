@@ -73,8 +73,8 @@ export default async function InventariosPage({
         {sessions.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-200 px-4 py-10 text-center shadow-sm">
             <div className="text-3xl mb-2">📋</div>
-            <div className="text-gray-400 text-sm">Nenhuma sessão ainda</div>
-            <div className="text-gray-300 text-xs mt-1">Crie uma acima para começar</div>
+            <div className="text-gray-400 text-sm">Nenhum inventário ainda</div>
+            <div className="text-gray-300 text-xs mt-1">Crie um acima para começar</div>
           </div>
         ) : (
           <div className="flex flex-col gap-3">

@@ -19,16 +19,17 @@ export function NoSession({ operationType = "PRODUCT_INVENTORY", companyId }: Pr
   const router = useRouter();
 
   const isRegistration = operationType === "PRODUCT_REGISTRATION";
-  const label = isRegistration ? "Cadastro" : "Inventário";
-  const destRoute = companyId
-    ? `/empresas/${companyId}/${isRegistration ? "cadastro-produto" : "inventario-produto"}`
-    : isRegistration ? "/cadastro-produto" : "/inventario-produto";
+  const backHref = companyId ? `/empresas/${companyId}/inventarios` : "/empresas";
 
   const handleCreate = async () => {
     if (!companyId) { router.push("/empresas"); return; }
     setLoading(true);
     const session = await createSession(companyId, name, operationType);
-    router.push(`${destRoute}?sessionId=${session.id}`);
+    if (isRegistration) {
+      router.push(`/empresas/${companyId}/cadastro-produto?sessionId=${session.id}`);
+    } else {
+      router.push(`/empresas/${companyId}/inventarios/${session.id}/produto`);
+    }
   };
 
   return (
@@ -44,15 +45,15 @@ export function NoSession({ operationType = "PRODUCT_INVENTORY", companyId }: Pr
           }}
         />
         <div className="relative flex items-center gap-2.5">
-          <Link href="/coletar" className="text-white/70 active:text-white transition-colors shrink-0">
+          <Link href={backHref} className="text-white/70 active:text-white transition-colors shrink-0">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 5l-7 7 7 7" />
             </svg>
           </Link>
           <MoveCheckLogo size={30} className="shrink-0" />
           <div className="min-w-0">
-            <div className="text-[10px] text-white/55 tracking-[0.25em] uppercase">MOVE CHECK · {label.toUpperCase()}</div>
-            <div className="font-bold text-sm">Nenhuma sessão</div>
+            <div className="text-[10px] text-white/55 tracking-[0.25em] uppercase">MOVE CHECK · {isRegistration ? "CADASTRO" : "INVENTÁRIO"}</div>
+            <div className="font-bold text-sm">Nenhum inventário aberto</div>
           </div>
         </div>
       </header>
@@ -68,9 +69,9 @@ export function NoSession({ operationType = "PRODUCT_INVENTORY", companyId }: Pr
               <rect x="19.5" y="6" width="1.5" height="12" rx="0.5" />
             </svg>
           </div>
-          <h2 className="text-gray-900 font-bold text-xl mb-1">Nenhuma sessão aberta</h2>
+          <h2 className="text-gray-900 font-bold text-xl mb-1">Nenhum inventário aberto</h2>
           <p className="text-gray-400 text-sm">
-            Crie uma nova sessão de {label.toLowerCase()} para começar.
+            Crie um novo inventário para começar a contar.
           </p>
         </div>
 
@@ -78,27 +79,27 @@ export function NoSession({ operationType = "PRODUCT_INVENTORY", companyId }: Pr
           <div className="w-full flex flex-col gap-3">
             <button
               onClick={() => setShowForm(true)}
-              className={`w-full ${isRegistration ? "bg-teal-600 active:bg-teal-700" : "bg-[#0057B8] active:bg-[#003F8A]"} text-white font-bold text-base rounded-2xl py-4 active:opacity-90 transition-colors shadow-md`}
+              className={`w-full ${isRegistration ? "bg-teal-600 active:bg-teal-700" : "bg-[#0057B8] active:bg-[#003F8A]"} text-white font-bold text-base rounded-2xl py-4 transition-colors shadow-md`}
             >
-              + Criar nova sessão de {label.toLowerCase()}
+              + Criar novo inventário
             </button>
             <Link
-              href="/sessoes"
+              href={backHref}
               className="w-full flex items-center justify-center bg-white border-2 border-gray-200 text-gray-600 font-medium text-sm rounded-2xl py-4 active:bg-gray-50 transition-colors"
             >
-              Ver sessões existentes
+              Ver inventários existentes
             </Link>
           </div>
         ) : (
           <div className="w-full bg-white rounded-2xl border border-gray-200 p-4 shadow-sm flex flex-col gap-3">
             <div className="text-[10px] text-gray-400 tracking-wider uppercase font-medium">
-              Nome da sessão
+              Nome do inventário
             </div>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={isRegistration ? "ex: Cadastro Fornecedor A" : "ex: Coleta Manhã — Galpão A"}
+              placeholder="ex: Inventário Manhã — Galpão A"
               className={`border border-gray-200 rounded-xl px-3 py-3 text-sm outline-none focus:ring-1 ${isRegistration ? "focus:border-teal-500 focus:ring-teal-500/20" : "focus:border-[#0057B8] focus:ring-[#0057B8]/20"}`}
               autoFocus
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
@@ -118,7 +119,7 @@ export function NoSession({ operationType = "PRODUCT_INVENTORY", companyId }: Pr
                 disabled={loading}
                 className={`flex-[2] ${isRegistration ? "bg-teal-600 active:bg-teal-700" : "bg-[#0057B8] active:bg-[#003F8A]"} text-white font-bold text-sm rounded-xl py-3 disabled:opacity-50 transition-colors`}
               >
-                {loading ? "Criando…" : `Criar e ${isRegistration ? "Cadastrar" : "Coletar"}`}
+                {loading ? "Criando…" : "Criar e Contar"}
               </button>
             </div>
           </div>

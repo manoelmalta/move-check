@@ -154,7 +154,9 @@ export function SessionCard({ session, companyId }: Props) {
       <div className="px-4 py-2.5 flex flex-wrap gap-2">
         {isOpen && (
           <Link
-            href={`/empresas/${companyId}/${isRegistration ? "cadastro-produto" : "inventario-produto"}?sessionId=${session.id}`}
+            href={isRegistration
+            ? `/empresas/${companyId}/cadastro-produto?sessionId=${session.id}`
+            : `/empresas/${companyId}/inventarios/${session.id}/produto`}
             className={`flex items-center gap-1.5 text-white text-xs font-bold rounded-lg px-3 py-2 transition-colors ${
               isRegistration
                 ? "bg-teal-600 active:bg-teal-700"
@@ -168,7 +170,7 @@ export function SessionCard({ session, companyId }: Props) {
               <rect x="16" y="6" width="1.5" height="12" rx="0.5" />
               <rect x="19.5" y="6" width="1.5" height="12" rx="0.5" />
             </svg>
-            {isRegistration ? "Cadastrar" : "Coletar"}
+            {isRegistration ? "Cadastrar" : "Contar"}
           </Link>
         )}
 
