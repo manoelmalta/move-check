@@ -5,6 +5,14 @@ import { detectCodeType } from "@/lib/barcode";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+// Zod v4 rejeita UUIDs não-padrão como 00000000-0000-0000-0000-000000000001
+// (exige version nibble 1-8 e variant bits 89ab). Usamos regex permissiva para
+// aceitar qualquer sequência UUID-formatted incluindo o ID da Empresa Padrão.
+const zId = z.string().regex(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  "ID inválido"
+);
+
 // ─── Lookup ───────────────────────────────────────────────────────────────────
 
 export type LookupResult =
@@ -79,7 +87,7 @@ export type SaveResult = { ok: true; entryId: string } | { ok: false; error: str
 // ─── Save — código já vinculado (found) ───────────────────────────────────────
 
 const SaveLinkedSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: zId,
   sessionId: z.string(),
   code: z.string().min(1),
   quantity: z.number().int().positive(),
@@ -130,7 +138,7 @@ export async function saveLinkedScan(data: z.infer<typeof SaveLinkedSchema>): Pr
 // ─── Save + Link — vincula barcode ao produto e salva leitura ─────────────────
 
 const LinkAndSaveSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: zId,
   sessionId: z.string(),
   code: z.string().min(1),
   quantity: z.number().int().positive(),
@@ -194,7 +202,7 @@ export async function linkAndSave(data: z.infer<typeof LinkAndSaveSchema>): Prom
 // ─── Save — pendente de vínculo ───────────────────────────────────────────────
 
 const SavePendingSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: zId,
   sessionId: z.string(),
   code: z.string().min(1),
   quantity: z.number().int().positive(),
@@ -288,12 +296,12 @@ export async function searchProductByText(
 // instâncias que ainda não aplicaram migration 001 (campo usa DEFAULT 'BARCODE').
 
 const SaveInventoryCountSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: zId,
   sessionId: z.string(),
   code: z.string().min(1),
   codeType: z.enum(["EAN", "DUN", "UNKNOWN"]),
   quantity: z.number().int().positive(),
-  productId: z.string().uuid(),
+  productId: zId,
   unitsPerPackage: z.number().int().positive().optional(),
 });
 
@@ -346,7 +354,7 @@ export async function saveInventoryCount(
 // ─── (Legacy) saveProductScan — mantido por compatibilidade ──────────────────
 
 const SaveProductScanSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: zId,
   sessionId: z.string(),
   code: z.string().min(1),
   identificationMethod: z.enum(["CODIGO_INTERNO", "DESCRICAO"]),

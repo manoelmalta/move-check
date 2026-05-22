@@ -552,21 +552,23 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
 
         {/* ── Quantity ──────────────────────────────────────────────────────────── */}
         {showQty && (
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-4 py-4">
-            <label className="text-[10px] text-gray-400 tracking-widest uppercase block mb-2">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-4 pt-4 pb-3">
+            <label className="text-[10px] text-gray-400 tracking-widest uppercase block text-center mb-3">
               {qtyLabel}
             </label>
 
-            {/* Big numeric input */}
-            <div className="flex items-center gap-3">
+            {/* [-] [input] [+] */}
+            <div className="flex items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={() => {
-                  const n = Math.max(1, (parseInt(qtyStr, 10) || 0) - 1);
+                  const cur = parseInt(qtyStr, 10);
+                  const n = cur > 1 ? cur - 1 : 1;
                   setQtyStr(String(n));
                   setQtyError("");
                 }}
-                className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center text-gray-700 font-bold text-xl active:bg-gray-200 transition shrink-0"
+                className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-gray-700 font-bold text-2xl shrink-0 active:bg-gray-200 transition select-none"
+                aria-label="Diminuir"
               >−</button>
 
               <input
@@ -581,7 +583,7 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
                 }}
                 onKeyDown={(e) => { if (e.key === "Enter") handleSaveCount(); }}
                 placeholder="0"
-                className="flex-1 text-center text-3xl font-bold text-gray-900 border-2 border-gray-200 rounded-xl py-3 outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/20 transition [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="w-32 text-center text-4xl font-bold text-gray-900 border-2 border-gray-200 rounded-xl py-3 outline-none focus:border-[#0057B8] focus:ring-2 focus:ring-[#0057B8]/20 transition [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
 
               <button
@@ -591,24 +593,25 @@ export function ScannerCockpit({ session, companyId, initialEntries }: Props) {
                   setQtyStr(String(n));
                   setQtyError("");
                 }}
-                className="w-11 h-11 rounded-xl bg-[#0057B8] flex items-center justify-center text-white font-bold text-xl active:bg-[#003F8A] transition shrink-0"
+                className="w-12 h-12 rounded-xl bg-[#0057B8] flex items-center justify-center text-white font-bold text-2xl shrink-0 active:bg-[#003F8A] transition select-none"
+                aria-label="Aumentar"
               >+</button>
             </div>
 
             {/* DUN calculator */}
             {isDun && phase.product.unitsPerPackage && qtyStr && parseInt(qtyStr, 10) > 0 && (
-              <div className="mt-2 text-center text-xs text-purple-600">
+              <div className="mt-3 text-center text-xs text-purple-600 font-medium">
                 {parseInt(qtyStr, 10)} emb × {phase.product.unitsPerPackage} un = <strong>{parseInt(qtyStr, 10) * phase.product.unitsPerPackage} unidades</strong>
               </div>
             )}
             {countType === "embalagem" && tempUpk && qtyStr && parseInt(qtyStr, 10) > 0 && parseInt(tempUpk, 10) > 0 && (
-              <div className="mt-2 text-center text-xs text-purple-600">
+              <div className="mt-3 text-center text-xs text-purple-600 font-medium">
                 {parseInt(qtyStr, 10)} emb × {parseInt(tempUpk, 10)} un = <strong>{parseInt(qtyStr, 10) * parseInt(tempUpk, 10)} unidades</strong>
               </div>
             )}
 
             {qtyError && (
-              <div className="mt-2 text-xs text-red-600 text-center">{qtyError}</div>
+              <div className="mt-2 text-xs text-red-600 text-center font-medium">{qtyError}</div>
             )}
           </div>
         )}
