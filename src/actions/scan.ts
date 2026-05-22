@@ -204,39 +204,16 @@ export async function savePendingScan(data: z.infer<typeof SavePendingSchema>): 
   const parsed = SavePendingSchema.safeParse(data);
   if (!parsed.success) return { ok: false, error: "Dados inválidos" };
 
-  const { companyId, sessionId, code, quantity } = parsed.data;
+  const { companyId, sessionId, code } = parsed.data;
   const codeType = detectCodeType(code);
   const supabase = createServerClient();
 
   const sessionError = await assertSessionOpen(companyId, sessionId);
   if (sessionError) return { ok: false, error: sessionError };
 
-  const { data: dup } = await supabase
-    .from("scan_entries")
-    .select("id")
-    .eq("session_id", sessionId)
-    .eq("code", code)
-    .maybeSingle();
-  if (dup) return { ok: false, error: "Código já registrado nesta sessão" };
-
-  const { data: entry, error } = await supabase
-    .from("scan_entries")
-    .insert({
-      company_id: companyId,
-      session_id: sessionId,
-      code,
-      code_type: codeType,
-      quantity,
-      product_id: null,
-      status: "PENDENTE_DE_VINCULO",
-    })
-    .select("id")
-    .single();
-
-  if (error || !entry) return { ok: false, error: "Falha ao salvar leitura" };
-
-  // Gera pendência de cadastro com origem no inventário
-  await supabase
+  // Regra: item sem cadastro → só pendência, não gera scan_entry.
+  // scan_entries registram apenas contagens de produtos conhecidos.
+  const { error } = await supabase
     .from("registration_pending_items")
     .insert({
       company_id: companyId,
@@ -247,18 +224,20 @@ export async function savePendingScan(data: z.infer<typeof SavePendingSchema>): 
       status: "PENDENTE",
     });
 
-  revalidatePath(`/empresas/${companyId}/inventario-produto`);
+  if (error) return { ok: false, error: `Falha ao gerar pendência: ${error.message}` };
+
   revalidatePath(`/empresas/${companyId}/pendencias`);
-  return { ok: true, entryId: entry.id };
+  return { ok: true, entryId: "pending" };
 }
 
-// ─── Busca por texto / código interno ────────────────────────────────────────
+// ─── Busca por texto (código interno ou descrição) ────────────────────────────
 
 export type ProductWithBarcodes = {
   id: string;
   codigoInterno: string;
   descricao: string;
   unidadeMedida: string;
+  unitsPerPackage: number | null;
   barcodes: Array<{ code: string; codeType: string }>;
 };
 
@@ -277,7 +256,7 @@ export async function searchProductByText(
   const supabase = createServerClient();
   const { data, error } = await supabase
     .from("products")
-    .select("id, codigo_interno, descricao, unidade_medida, product_barcodes(code, code_type)")
+    .select("id, codigo_interno, descricao, unidade_medida, product_barcodes(code, code_type, units_per_package)")
     .eq("company_id", companyId)
     .or(`codigo_interno.ilike.%${trimmed}%,descricao.ilike.%${trimmed}%`)
     .order("descricao", { ascending: true })
@@ -288,19 +267,83 @@ export async function searchProductByText(
 
   return {
     status: "found",
-    products: data.map((p) => ({
-      id: p.id as string,
-      codigoInterno: p.codigo_interno as string,
-      descricao: p.descricao as string,
-      unidadeMedida: p.unidade_medida as string,
-      barcodes: (
-        (p.product_barcodes as Array<{ code: string; code_type: string }>) ?? []
-      ).map((b) => ({ code: b.code, codeType: b.code_type })),
-    })),
+    products: data.map((p) => {
+      const bars = (
+        (p.product_barcodes as Array<{ code: string; code_type: string; units_per_package: number | null }>) ?? []
+      );
+      return {
+        id: p.id as string,
+        codigoInterno: p.codigo_interno as string,
+        descricao: p.descricao as string,
+        unidadeMedida: p.unidade_medida as string,
+        unitsPerPackage: bars[0]?.units_per_package ?? null,
+        barcodes: bars.map((b) => ({ code: b.code, codeType: b.code_type })),
+      };
+    }),
   };
 }
 
-// ─── Save — produto identificado por código interno / descrição ───────────────
+// ─── Save — contagem de inventário (ação única para EAN/DUN e texto) ──────────
+// Não inclui identification_method no INSERT para compatibilidade com
+// instâncias que ainda não aplicaram migration 001 (campo usa DEFAULT 'BARCODE').
+
+const SaveInventoryCountSchema = z.object({
+  companyId: z.string().uuid(),
+  sessionId: z.string(),
+  code: z.string().min(1),
+  codeType: z.enum(["EAN", "DUN", "UNKNOWN"]),
+  quantity: z.number().int().positive(),
+  productId: z.string().uuid(),
+  unitsPerPackage: z.number().int().positive().optional(),
+});
+
+export async function saveInventoryCount(
+  data: z.infer<typeof SaveInventoryCountSchema>
+): Promise<SaveResult> {
+  const parsed = SaveInventoryCountSchema.safeParse(data);
+  if (!parsed.success) {
+    return { ok: false, error: `Dados inválidos: ${parsed.error.issues.map((i) => i.message).join(", ")}` };
+  }
+
+  const { companyId, sessionId, code, codeType, quantity, productId, unitsPerPackage } = parsed.data;
+  const supabase = createServerClient();
+
+  const sessionError = await assertSessionOpen(companyId, sessionId);
+  if (sessionError) return { ok: false, error: sessionError };
+
+  const { data: dup } = await supabase
+    .from("scan_entries")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("session_id", sessionId)
+    .eq("code", code)
+    .maybeSingle();
+  if (dup) return { ok: false, error: "Este produto já foi contado neste inventário" };
+
+  const { data: entry, error } = await supabase
+    .from("scan_entries")
+    .insert({
+      company_id: companyId,
+      session_id: sessionId,
+      code,
+      code_type: codeType,
+      quantity,
+      units_per_package: unitsPerPackage ?? null,
+      product_id: productId,
+      status: "VINCULADO",
+    })
+    .select("id")
+    .single();
+
+  if (error || !entry) {
+    return { ok: false, error: `Falha ao gravar contagem${error ? `: ${error.message}` : ""}` };
+  }
+
+  revalidatePath(`/empresas/${companyId}/inventarios`);
+  return { ok: true, entryId: entry.id };
+}
+
+// ─── (Legacy) saveProductScan — mantido por compatibilidade ──────────────────
 
 const SaveProductScanSchema = z.object({
   companyId: z.string().uuid(),
@@ -317,42 +360,8 @@ export async function saveProductScan(
 ): Promise<SaveResult> {
   const parsed = SaveProductScanSchema.safeParse(data);
   if (!parsed.success) return { ok: false, error: "Dados inválidos" };
-
-  const { companyId, sessionId, code, identificationMethod, quantity, productId, unitsPerPackage } =
-    parsed.data;
-  const supabase = createServerClient();
-
-  const sessionError = await assertSessionOpen(companyId, sessionId);
-  if (sessionError) return { ok: false, error: sessionError };
-
-  const { data: dup } = await supabase
-    .from("scan_entries")
-    .select("id")
-    .eq("session_id", sessionId)
-    .eq("code", code)
-    .maybeSingle();
-  if (dup) return { ok: false, error: "Código já registrado nesta sessão" };
-
-  const { data: entry, error } = await supabase
-    .from("scan_entries")
-    .insert({
-      company_id: companyId,
-      session_id: sessionId,
-      code,
-      code_type: "UNKNOWN",
-      identification_method: identificationMethod,
-      quantity,
-      units_per_package: unitsPerPackage ?? null,
-      product_id: productId,
-      status: "VINCULADO",
-    })
-    .select("id")
-    .single();
-
-  if (error || !entry) return { ok: false, error: "Falha ao salvar leitura" };
-
-  revalidatePath(`/empresas/${companyId}/inventario-produto`);
-  return { ok: true, entryId: entry.id };
+  const { companyId, sessionId, code, quantity, productId, unitsPerPackage } = parsed.data;
+  return saveInventoryCount({ companyId, sessionId, code, codeType: "UNKNOWN", quantity, productId, unitsPerPackage });
 }
 
 // ─── Entradas da sessão ───────────────────────────────────────────────────────
